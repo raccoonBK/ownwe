@@ -1,0 +1,16 @@
+{
+  "name": "Two Species",
+  "short_name": "Roundtable",
+  "description": "A quiet personal AI roundtable workspace.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f3eb",
+  "theme_color": "#f4efe6",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

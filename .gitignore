@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+
+node_modules/
+coverage/
+*.log
+
+.cyberboss-roundtable/
+.codex/
+.claude/
+.mcp.json
+codex-memory/
+src/otherworld-inn/node_modules/
+src/otherworld-inn/data/sessions/
+test-play-backup-*/

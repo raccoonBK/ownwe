@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f4efe6">
+    <title>Two Species · 圆桌</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/styles.css??v=mobile-nav-overlay-5">
+  </head>
+  <body>
+    <div class="bg-grid" aria-hidden="true"></div>
+
+    <main class="app-shell">
+      <nav class="rail" aria-label="主导航">
+        <div class="rail-logo" aria-hidden="true">
+          <svg viewBox="0 0 42 42" role="img" aria-label="Two Species">
+            <rect x="1" y="1" width="40" height="40" rx="14" fill="none"/>
+            <circle cx="21" cy="21" r="11.5" fill="none" stroke="currentColor" stroke-width="1.2"/>
+            <circle cx="15" cy="20" r="2.4" fill="var(--codex)"/>
+            <circle cx="27" cy="22" r="2.4" fill="var(--claude)"/>
+            <path d="M21 13.5v15M13.5 21h15" stroke="currentColor" stroke-width=".9" stroke-linecap="round" opacity=".45"/>
+          </svg>
+        </div>
+
+        <button class="rail-btn active" type="button" data-view="chat" title="圆桌">
+          <span>⌁</span>
+          <small>圆桌</small>
+        </button>
+        <button class="rail-btn" type="button" data-view="notebook" title="笔记本">
+          <span>□</span>
+          <small>本子</small>
+        </button>
+        <button class="rail-btn" type="button" data-view="summaries" title="摘要">
+          <span>◑</span>
+          <small>摘要</small>
+        </button>
+        <button class="rail-btn" type="button" data-view="notes" title="便签">
+          <span>✦</span>
+          <small>便签</small>
+        </button>
+        <button class="rail-btn" type="button" data-view="user" title="用户百科">
+          <span>◌</span>
+          <small>用户</small>
+        </button>
+        <button class="rail-btn" type="button" data-view="plan" title="学习计划">
+          <span>≡</span>
+          <small>计划</small>
+        </button>
+
+        <button class="rail-btn" type="button" data-view="otherworld" title="异世界旅社">
+          <span>◇</span>
+          <small>旅社</small>
+        </button>
+
+        <div class="rail-spacer"></div>
+        <button class="rail-btn" type="button" data-view="worklog" title="工作日志">
+          <span>⋯</span>
+          <small>日志</small>
+        </button>
+      </nav>
+
+      <aside class="side-panel" aria-label="房间与草稿">
+        <header class="side-head">
+          <h1>Two Species</h1>
+          <p id="statusText">Ready</p>
+          <button id="topicsToggleButton" class="topics-pill" type="button" aria-expanded="false" aria-controls="topicsDrawer">
+            <span class="topics-icon">▦</span>
+            话题
+          </button>
+        </header>
+
+        <section class="side-section primary-actions">
+          <button class="new-chat-button" type="button" data-open-topics>＋ 新聊天</button>
+        </section>
+
+        <section class="side-section msg-search-section">
+          <div class="msg-search-wrap">
+            <input id="msgSearchInput" class="msg-search-input" type="search" autocomplete="off" placeholder="搜聊天记录…">
+          </div>
+          <div class="msg-search-controls">
+            <select id="memoryScopeSelect" class="memory-scope-select" aria-label="Search scope">
+              <option value="global">All</option>
+              <option value="main">Main</option>
+              <option value="codex">Codex</option>
+              <option value="claude">Claude</option>
+              <option value="project">Project</option>
+              <option value="temporary">Temp</option>
+              <option value="philosophy">Philosophy</option>
+              <option value="alone">Alone</option>
+            </select>
+            <input id="memoryProjectInput" class="memory-project-input" type="text" autocomplete="off" placeholder="Project" hidden>
+          </div>
+          <div id="msgSearchResults" class="msg-search-results" hidden></div>
+        </section>
+
+        <section class="side-section">
+          <div class="section-label">单聊</div>
+          <button class="room-item" type="button" data-direct-id="codex">
+            <span class="room-index codex-ink">✦</span>
+            <span>
+              <strong>Codex</strong>
+              <small>设计与代码执行</small>
+            </span>
+            <i></i>
+          </button>
+          <button class="room-item" type="button" data-direct-id="code">
+            <span class="room-index claude-ink">✦</span>
+            <span>
+              <strong>Claude Code</strong>
+              <small>工程维护与记忆整理</small>
+            </span>
+            <i></i>
+          </button>
+        </section>
+
+        <section class="side-section">
+          <div class="section-label">固定房间</div>
+          <div id="fixedRoomsList" class="side-topic-list"></div>
+        </section>
+
+        <section class="side-section">
+          <div class="section-label">项目</div>
+          <div id="projectsList" class="side-topic-list"></div>
+        </section>
+
+        <section class="side-section">
+          <div class="section-label">最近</div>
+          <div id="temporaryTopicsList" class="side-topic-list"></div>
+        </section>
+      </aside>
+
+      <section class="main-card view-panel active" data-panel="chat">
+        <header class="room-bar">
+          <div>
+            <h2 id="roomTitleText">主厅</h2>
+            <p><span id="roundText">0/4</span> · <span id="roomMetaText">本地记录 · 当前圆桌</span></p>
+          </div>
+          <button id="mobileNavToggle" class="mobile-nav-toggle" type="button" aria-label="展开导航" aria-expanded="false" title="显示/隐藏导航栏">⊞</button>
+          <button id="mobileSearchBtn" class="mobile-search-btn" type="button" aria-label="搜索" title="搜索">⌕</button>
+          <button id="roomActionsToggle" class="room-actions-toggle" type="button" aria-label="操作" aria-expanded="false">⋯</button>
+          <div class="room-actions">
+            <button id="mobileTopicsButton" class="button mobile-topic-button" type="button" data-open-topics>New</button>
+            <a id="endTopicButton" class="button" href="/action/end-topic">End</a>
+            <a id="newCodexButton" class="button btn-codex" href="/action/new-codex">↺ Codex</a>
+            <a id="newClaudeButton" class="button btn-claude" href="/action/new-claude">↺ Claude</a>
+            <button id="stepButton" hidden>Next Speaker</button>
+            <button id="summaryButton" class="button" type="button">Summary</button>
+          </div>
+        </header>
+
+        <section id="errorBox" class="error" hidden></section>
+
+        <section id="runtimeStatusPanel" class="runtime-status" hidden></section>
+
+        <section id="messages" class="messages" aria-live="polite">
+          <div class="empty-chat-hint">
+            <strong>等第一条消息。</strong>
+            <span>这里会显示 Codex、Claude Code、DeepSeek 和用户的圆桌记录。</span>
+          </div>
+        </section>
+
+        <section id="approvalPanel" class="approval-panel" hidden></section>
+
+        <form id="interjectForm" class="interject">
+          <button type="button" id="targetToggleBtn" class="target-toggle-btn">
+            <span class="target-dot dot-all"></span>
+            <span id="targetLabel">Round</span>
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <div class="target-toggle" aria-label="Message target" hidden>
+            <button type="button" class="active" data-target=""><span class="target-dot dot-all"></span>Round</button>
+            <button type="button" data-target="none"><span class="target-dot dot-none"></span>只发送</button>
+            <button type="button" data-target="codex"><span class="target-dot dot-codex"></span>@Codex</button>
+            <button type="button" data-target="claude"><span class="target-dot dot-claude"></span>@Claude</button>
+            <button type="button" data-target="deepseek"><span class="target-dot dot-deepseek"></span>@DeepSeek</button>
+            <button type="button" data-target="gemini"><span class="target-dot dot-gemini"></span>@Gemini</button>
+          </div>
+
+          <div class="interject-input-row">
+            <input id="attachmentInput" type="file" hidden multiple>
+            <button type="button" id="attachButton" class="attach-btn" aria-label="Attach files" title="Attach files">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5.2 8.8l4.28-4.28a2.3 2.3 0 113.25 3.25L7.38 13.1a3.55 3.55 0 11-5.02-5.02l5.02-5.02" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <textarea id="interjectInput" rows="1" autocomplete="off" placeholder="Send a message to the round…"></textarea>
+            <button type="submit" id="sendButton" class="send-btn" aria-label="Send">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 8h12M9 3l5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button type="button" id="interruptSendButton" class="interrupt-send-btn" hidden>中断</button>
+          </div>
+          <div id="attachmentTray" class="attachment-tray" hidden></div>
+        </form>
+
+        <button class="floating-note-tab" type="button" data-view="notes">便签</button>
+      </section>
+
+      <section class="main-card view-panel notebook-panel" data-panel="notebook">
+        <header class="paper-head">
+          <p>Notebooks</p>
+          <h2>存放区</h2>
+          <span>成型想法、项目进展、确定决定。落地后归档，日常聊天不进来。</span>
+          <button id="archiveOpenButton" class="archive-open-btn" type="button">＋ 归档</button>
+        </header>
+
+        <div id="archiveForm" class="archive-form" style="display:none">
+          <input id="archiveTitleInput" type="text" placeholder="标题" autocomplete="off">
+          <textarea id="archiveSummaryInput" rows="3" placeholder="摘要（一两句，说清楚结论是什么）"></textarea>
+          <input id="archiveTagsInput" type="text" placeholder="标签，逗号分隔（可选）" autocomplete="off">
+          <input id="archiveSourceInput" type="text" placeholder="来源话题（可选）" autocomplete="off">
+          <div class="archive-form-actions">
+            <button id="archiveSubmitButton" type="button">存入</button>
+            <button id="archiveCancelButton" type="button">取消</button>
+          </div>
+        </div>
+
+        <div id="notebookGrid" class="notebook-grid">
+          <p class="notebook-empty">还没有归档条目。</p>
+        </div>
+      </section>
+
+      <section class="main-card view-panel summaries-panel" data-panel="summaries">
+        <header class="paper-head">
+          <p>DeepSeek Summaries</p>
+          <h2>对话摘要</h2>
+          <span>按天归档的总结。工作内容清楚留下，闲聊自然流走。</span>
+          <div class="summary-filter-row">
+            <button class="summary-filter-tab active" data-filter="current" type="button">当前房间</button>
+            <button class="summary-filter-tab" data-filter="project" type="button">项目</button>
+            <button class="summary-filter-tab" data-filter="fixed" type="button">固定</button>
+            <button class="summary-filter-tab" data-filter="direct" type="button">单聊</button>
+            <button class="summary-filter-tab" data-filter="all" type="button">全部</button>
+          </div>
+          <div class="summary-bulk-row">
+            <span id="summarySelectedCount">已选 0 条</span>
+            <button id="summaryManualButton" type="button" class="button">手动新增</button>
+            <button id="summaryMergeButton" type="button" class="button btn-deepseek" disabled>DeepSeek 合并</button>
+            <button id="summaryClearSelectionButton" type="button" class="button" disabled>清除选择</button>
+          </div>
+          <p id="summaryActionStatus" class="summary-action-status" aria-live="polite"></p>
+        </header>
+        <div id="summaryTimeline" class="summary-timeline">
+          <p class="summary-empty">还没有总结。点主聊天里的 Summary 按钮可以让 DeepSeek 生成一条。</p>
+        </div>
+      </section>
+
+      <section class="main-card view-panel notes-panel" data-panel="notes">
+        <header class="paper-head">
+          <p>Roundtable Notebook</p>
+          <div class="notebook-title-row">
+            <h2>圆桌本子</h2>
+            <select id="notebookProjectSelect"></select>
+          </div>
+          <span>目标、待办和 bug 放这里。新问题先看收件箱。</span>
+        </header>
+
+        <div class="notebook-controls">
+          <form id="notebookInboxForm" class="notebook-inbox-form">
+            <textarea id="notebookInboxInput" rows="5" placeholder="写个想法进来..." autocomplete="off"></textarea>
+            <button type="submit">加入</button>
+          </form>
+        </div>
+
+        <div id="roundtableNotebook" class="roundtable-notebook">
+          <p class="notebook-empty">正在读取本子。</p>
+        </div>
+      </section>
+
+      <section class="main-card view-panel user-panel" data-panel="user">
+        <header class="paper-head">
+          <p>User Profile</p>
+          <h2>用户百科</h2>
+          <span>启动核心卡 + 按需检索。现在先放占位示例。</span>
+        </header>
+
+        <div class="user-card">
+          <div class="user-row">
+            <span>语言习惯</span>
+            <p>中文为主，偶尔夹英文。喜欢直接、自然，不要模板和空泛铺垫。</p>
+          </div>
+          <div class="user-row">
+            <span>工作方式</span>
+            <p>先做大结构，再处理微调。需要可执行文件、方案和明确下一步。</p>
+          </div>
+          <div class="user-row">
+            <span>审美倾向</span>
+            <p>浅纸感、留白、雾蓝灰、少量赭红；不要大面积绿，不要后台感。</p>
+          </div>
+          <div class="user-row">
+            <span>当前阶段</span>
+            <p>圆桌前端美化、上下文结构和存放区规划中。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="main-card view-panel study-plan-panel" data-panel="plan">
+        <header class="paper-head study-plan-head">
+          <p>固定｜学习</p>
+          <h2>雅思首考冲刺大纲</h2>
+          <span>从 2026-05-18 起，先把首考目标压到听力 5.5 / 阅读 6.0 / 写作 5.5 / 口语 5.0；首考后再切换到 PTE 冲刺，不把两段任务混在同一轮训练里。</span>
+        </header>
+
+        <div class="study-plan-body">
+          <section class="tracker-shell">
+            <div class="plan-section-head">
+              <p>LIVE</p>
+              <h3>学习追踪</h3>
+            </div>
+
+            <section class="tracker-overview">
+              <div class="tracker-overview-head">
+                <h4>当前总览</h4>
+                <button id="studyOverviewSaveButton" type="button">保存总览</button>
+              </div>
+              <div class="tracker-overview-grid">
+                <label>
+                  <span>当前目标</span>
+                  <input id="studyCurrentGoalInput" type="text">
+                </label>
+                <label>
+                  <span>当前阶段</span>
+                  <input id="studyCurrentPhaseInput" type="text">
+                </label>
+                <label class="tracker-wide">
+                  <span>当前分数</span>
+                  <input id="studyCurrentScoresInput" type="text" placeholder="听力 4.5-5；阅读 5.5-6；写作 待测；口语 待测">
+                </label>
+                <label class="tracker-wide">
+                  <span>主要风险</span>
+                  <textarea id="studyMainRisksInput" rows="2" placeholder="每行一项"></textarea>
+                </label>
+                <label class="tracker-wide">
+                  <span>未来三天</span>
+                  <textarea id="studyNextThreeDaysInput" rows="2" placeholder="每行一项"></textarea>
+                </label>
+              </div>
+            </section>
+
+            <section class="tracker-grid">
+              <article class="tracker-card">
+                <div class="tracker-card-head">
+                  <h4>教学计划区</h4>
+                  <button id="studyPlanSaveButton" type="button">保存计划</button>
+                </div>
+                <div class="tracker-form">
+                  <label>
+                    <span>日期</span>
+                    <input id="studyPlanDateInput" type="date">
+                  </label>
+                  <label>
+                    <span>阶段</span>
+                    <input id="studyPlanPhaseInput" type="text">
+                  </label>
+                  <label class="tracker-wide">
+                    <span>今日重点</span>
+                    <input id="studyPlanFocusInput" type="text">
+                  </label>
+                  <label class="tracker-wide">
+                    <span>具体任务</span>
+                    <textarea id="studyPlanTasksInput" rows="3" placeholder="每行一项"></textarea>
+                  </label>
+                  <label class="tracker-wide">
+                    <span>目标指标</span>
+                    <textarea id="studyPlanMetricsInput" rows="2" placeholder="每行一项"></textarea>
+                  </label>
+                  <label class="tracker-wide">
+                    <span>复习安排</span>
+                    <textarea id="studyPlanReviewInput" rows="2" placeholder="每行一项"></textarea>
+                  </label>
+                  <label class="tracker-wide">
+                    <span>教师备注</span>
+                    <textarea id="studyPlanNotesInput" rows="2"></textarea>
+                  </label>
+                </div>
+              </article>
+
+              <article class="tracker-card">
+                <div class="tracker-card-head">
+                  <h4>每日执行区</h4>
+                  <button id="studyProgressSaveButton" type="button">保存执行</button>
+                </div>
+                <div class="tracker-form">
+                  <label>
+                    <span>日期</span>
+                    <input id="studyProgressDateInput" type="date">
+                  </label>
+                  <label class="tracker-wide">
+                    <span>实际完成</span>
+                    <textarea id="studyActualCompletedInput" rows="3"></textarea>
+                  </label>
+                  <label class="tracker-wide">
+                    <span>数据 / 证据</span>
+                    <textarea id="studyEvidenceInput" rows="2"></textarea>
+                  </label>
+                  <label class="tracker-wide">
+                    <span>我的记录</span>
+                    <textarea id="studySelfNoteInput" rows="2"></textarea>
+                  </label>
+                  <label class="tracker-wide">
+                    <span>教师批注</span>
+                    <textarea id="studyTeacherFeedbackInput" rows="2"></textarea>
+                  </label>
+                  <label class="tracker-wide">
+                    <span>待复习项</span>
+                    <textarea id="studyReviewDebtInput" rows="2" placeholder="每行一项"></textarea>
+                  </label>
+                  <label class="tracker-wide">
+                    <span>明日调整</span>
+                    <textarea id="studyNextAdjustmentInput" rows="2"></textarea>
+                  </label>
+                </div>
+              </article>
+            </section>
+
+            <section class="tracker-history">
+              <div class="tracker-history-group">
+                <h4>最近教学计划</h4>
+                <div id="studyPlanTable" class="tracker-table"></div>
+              </div>
+              <div class="tracker-history-group">
+                <h4>最近执行记录</h4>
+                <div id="studyProgressTable" class="tracker-table"></div>
+              </div>
+            </section>
+          </section>
+
+          <section class="plan-band target-band" aria-label="目标与判断">
+            <div class="plan-stat">
+              <small>当前</small>
+              <strong>听 4.5-5 / 读 5.5-6</strong>
+              <span>写作有思路，口语内容生成慢</span>
+            </div>
+            <div class="plan-stat">
+              <small>首考目标</small>
+              <strong>5.5 / 6 / 5.5 / 5</strong>
+              <span>总分目标 5.5</span>
+            </div>
+            <div class="plan-stat">
+              <small>时间窗</small>
+              <strong>5 月底至 6 月初</strong>
+              <span>高压冲刺，先抓最值钱的分</span>
+            </div>
+          </section>
+
+          <section class="plan-section">
+            <div class="plan-section-head">
+              <p>01</p>
+              <h3>总路线</h3>
+            </div>
+            <div class="phase-row">
+              <article class="phase-block">
+                <small>5/18 - 5/19</small>
+                <h4>诊断</h4>
+                <p>做听力切片、写作样本、口语内容反应摸底，确认真实短板，不急着刷满套题。</p>
+              </article>
+              <article class="phase-block">
+                <small>5/20 - 5/24</small>
+                <h4>建模</h4>
+                <p>听力补高频漏洞；写作立稳定结构；口语先练“看到题先生成内容”；阅读守住正确率。</p>
+              </article>
+              <article class="phase-block">
+                <small>5/25 - 考前</small>
+                <h4>提速</h4>
+                <p>按题库和高频材料做限时训练、错题回炉、整套联动，减少考场失误。</p>
+              </article>
+              <article class="phase-block">
+                <small>首考后</small>
+                <h4>切换</h4>
+                <p>用首考结果重估，再决定 PTE 一个周期里主攻哪三项，不提前分散火力。</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="plan-section">
+            <div class="plan-section-head">
+              <p>02</p>
+              <h3>四科主线</h3>
+            </div>
+            <div class="subject-grid">
+              <article class="subject-block">
+                <h4>听力</h4>
+                <p><strong>目标：</strong>4.5-5 → 5.5</p>
+                <p><strong>主抓：</strong>P1 拼写与数字，P2 地图与表格，P3 选择题反应，P4 定位与跟读。</p>
+                <p><strong>材料：</strong>5 月高频表，先高频再次高频。</p>
+                <p><strong>每日产出：</strong>1 个 section 精听回听 + 1 份错因记录。</p>
+              </article>
+              <article class="subject-block">
+                <h4>阅读</h4>
+                <p><strong>目标：</strong>5.5-6 → 6.0</p>
+                <p><strong>主抓：</strong>定位、同义替换、判断题和段落匹配的节奏。</p>
+                <p><strong>材料：</strong>5 月高频篇章，优先 P1/P2 高频篇。</p>
+                <p><strong>每日产出：</strong>1 篇限时训练 + 错题定位复盘。</p>
+              </article>
+              <article class="subject-block">
+                <h4>写作</h4>
+                <p><strong>目标：</strong>拉到 5.5</p>
+                <p><strong>主抓：</strong>Task 2 审题、四段结构、论证展开；Task 1 数据概括与比较。</p>
+                <p><strong>先不碰：</strong>先追高级词，再补结构。</p>
+                <p><strong>每日产出：</strong>隔天 1 篇完整作文，空档日做提纲和改写。</p>
+              </article>
+              <article class="subject-block">
+                <h4>口语</h4>
+                <p><strong>目标：</strong>先到可评分的 5.0</p>
+                <p><strong>真实卡点：</strong>见题后内容生成慢，中文也会空。</p>
+                <p><strong>主抓：</strong>题目分类、内容生成、答题骨架、题库迁移。</p>
+                <p><strong>材料：</strong>5 月 15 日口语题库，先新题再旧题。</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="plan-section">
+            <div class="plan-section-head">
+              <p>03</p>
+              <h3>每日结构</h3>
+            </div>
+            <div class="schedule-row">
+              <article>
+                <small>11:00</small>
+                <strong>听力</strong>
+                <span>精听 + 高频 section</span>
+              </article>
+              <article>
+                <small>13:30</small>
+                <strong>阅读</strong>
+                <span>限时篇章 + 定位复盘</span>
+              </article>
+              <article>
+                <small>15:30</small>
+                <strong>写作</strong>
+                <span>提纲 / 成文 / 改写轮换</span>
+              </article>
+              <article>
+                <small>19:30</small>
+                <strong>口语</strong>
+                <span>内容生成 + 题库输出</span>
+              </article>
+              <article>
+                <small>21:30</small>
+                <strong>复盘</strong>
+                <span>错题、卡点、次日任务</span>
+              </article>
+            </div>
+          </section>
+
+          <section class="plan-section">
+            <div class="plan-section-head">
+              <p>04</p>
+              <h3>口语单独路线</h3>
+            </div>
+            <ol class="plan-steps">
+              <li><strong>先内容，后英语。</strong> 看到题先在中文里决定立场、原因、细节，不让脑子空转。</li>
+              <li><strong>再骨架。</strong> 把高频题型固定成可复用路径，例如偏好题、经历题、人物题、地点题。</li>
+              <li><strong>再迁移。</strong> 同一骨架跨 Morning time、Tidiness、Shopping、Websites 等题组切换。</li>
+              <li><strong>最后提自然度。</strong> 等能稳定答出，再交给表达修订、追问、变体题。</li>
+            </ol>
+          </section>
+
+          <section class="plan-section">
+            <div class="plan-section-head">
+              <p>05</p>
+              <h3>验收点</h3>
+            </div>
+            <div class="checkpoint-row">
+              <article>
+                <small>每 2 天</small>
+                <strong>短验收</strong>
+                <span>听力错因、阅读限时、写作提纲、口语内容反应</span>
+              </article>
+              <article>
+                <small>每 5 天</small>
+                <strong>阶段验收</strong>
+                <span>1 套听读组合 + 1 篇作文 + 1 轮题库口语</span>
+              </article>
+              <article>
+                <small>考前 3 天</small>
+                <strong>收官验收</strong>
+                <span>只修高频失误，停止无边界扩题</span>
+              </article>
+            </div>
+          </section>
+
+          <section class="plan-section">
+            <div class="plan-section-head">
+              <p>06</p>
+              <h3>角色分工</h3>
+            </div>
+            <div class="role-row">
+              <article>
+                <h4>Codex</h4>
+                <p>负责诊断、排课、分阶段目标、四科取舍、材料优先级、阶段复测。</p>
+              </article>
+              <article>
+                <h4>Claude Code</h4>
+                <p>负责执行层检查：盯练习是否真的发生，审写作和口语输出，做改写、变体、迁移，不另起一套教学循环。</p>
+              </article>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="main-card view-panel otherworld-panel" data-panel="otherworld">
+        <iframe class="otherworld-frame" src="/otherworld/" title="异世界旅社"></iframe>
+      </section>
+
+      <section class="main-card view-panel worklog-panel" data-panel="worklog">
+        <header class="panel-head">
+          <h2>工作日志</h2>
+          <button type="button" id="worklogRefreshButton" class="panel-action-btn">刷新</button>
+        </header>
+        <div id="worklogContent" class="worklog-content">
+          <p class="worklog-empty">加载中…</p>
+        </div>
+      </section>
+    </main>
+
+    <!-- Search overlay -->
+    <div id="searchOverlay" class="search-overlay" hidden role="dialog" aria-modal="true" aria-label="搜索">
+      <div class="search-overlay-backdrop" id="searchOverlayBackdrop"></div>
+      <div class="search-overlay-sheet">
+        <div class="search-overlay-top">
+          <div class="search-overlay-input-row">
+            <span class="search-overlay-lens">⌕</span>
+            <input id="searchOverlayInput" type="search" class="search-overlay-input" autocomplete="off" placeholder="搜聊天记录…">
+            <button type="button" class="search-overlay-close-btn" id="searchOverlayClose" aria-label="关闭">✕</button>
+          </div>
+          <div class="search-overlay-toolbar">
+            <div class="search-type-tabs">
+              <button class="search-type-tab active" data-type="all" type="button">全部</button>
+              <button class="search-type-tab" data-type="message" type="button">消息</button>
+              <button class="search-type-tab" data-type="summary" type="button">总结</button>
+            </div>
+            <select id="searchOverlayScope" class="search-overlay-scope">
+              <option value="global">所有房间</option>
+              <option value="main">圆桌</option>
+              <option value="codex">Codex</option>
+              <option value="claude">Claude</option>
+              <option value="project">项目</option>
+              <option value="temporary">临时</option>
+              <option value="philosophy">哲学</option>
+              <option value="alone">独处</option>
+            </select>
+          </div>
+        </div>
+        <div id="searchOverlayResults" class="search-overlay-results">
+          <p class="search-overlay-hint">输入关键词开始搜索</p>
+        </div>
+      </div>
+    </div>
+
+    <section id="topicsDrawer" class="topic-drawer" aria-label="Archived topics" aria-hidden="true">
+      <button id="topicsScrim" class="topic-scrim" type="button" aria-label="Close topics"></button>
+      <aside class="topic-panel">
+        <header class="topic-panel-head">
+          <div>
+            <h2>Topics</h2>
+            <p id="currentTopicText">Current topic</p>
+          </div>
+          <button id="topicsCloseButton" type="button" class="close-btn" aria-label="Close topics">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 1l12 12M13 1L1 13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </header>
+        <div class="new-topic-inline topic-admin-block">
+          <label for="topicInput">新话题</label>
+          <textarea id="topicInput" rows="3" placeholder="写一个新话题…"></textarea>
+          <div class="topic-kind-picker" aria-label="话题分类">
+            <label><input type="radio" name="newTopicKind" value="temporary" checked> 临时</label>
+            <label><input type="radio" name="newTopicKind" value="project"> 项目</label>
+          </div>
+          <div class="new-topic-row">
+            <button id="startButton" class="primary" type="button">创建</button>
+          </div>
+          <small>临时 → 最近列表；项目 → 左侧项目栏。</small>
+        </div>
+        <div class="topic-manage topic-admin-block">
+          <label for="topicRenameInput">当前窗口</label>
+          <input id="topicRenameInput" type="text" placeholder="当前窗口名称">
+          <div class="topic-manage-actions">
+            <button id="renameTopicButton" type="button">改名</button>
+            <button id="deleteCurrentTopicButton" type="button">彻底删除</button>
+          </div>
+          <div id="fixedRoomIconPicker" class="fixed-room-icon-picker" hidden>
+            <span class="fixed-room-icon-label">图标</span>
+            <div id="fixedRoomIconOptions" class="fixed-room-icon-options"></div>
+          </div>
+          <small>固定房间、临时和项目均可改名。</small>
+        </div>
+        <div id="topicsList" class="topics-list"></div>
+      </aside>
+    </section>
+
+    <dialog id="summaryEditDialog" class="summary-edit-dialog">
+      <form id="summaryEditForm" method="dialog" class="summary-edit-form">
+        <input id="summaryEditId" type="hidden">
+        <header>
+          <h3 id="summaryEditTitleText">编辑摘要</h3>
+          <button id="summaryEditCloseButton" type="button" aria-label="关闭">✕</button>
+        </header>
+        <label>
+          <span>标题</span>
+          <input id="summaryEditTitleInput" type="text" autocomplete="off">
+        </label>
+        <label>
+          <span>摘要</span>
+          <textarea id="summaryEditTextInput" rows="5"></textarea>
+        </label>
+        <label>
+          <span>决定</span>
+          <textarea id="summaryEditDecisionsInput" rows="3" placeholder="每行一条"></textarea>
+        </label>
+        <label>
+          <span>下一步</span>
+          <textarea id="summaryEditOpenItemsInput" rows="3" placeholder="每行一条"></textarea>
+        </label>
+        <label>
+          <span>当前状态</span>
+          <textarea id="summaryEditLatestStateInput" rows="2"></textarea>
+        </label>
+        <label>
+          <span>标签</span>
+          <input id="summaryEditTagsInput" type="text" autocomplete="off" placeholder="逗号分隔">
+        </label>
+        <footer>
+          <button id="summaryEditCancelButton" type="button" class="button">取消</button>
+          <button id="summaryEditSaveButton" type="submit" class="button primary">保存</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <script>
+      document.querySelectorAll("[data-view]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const view = btn.dataset.view;
+          if (!view) return;
+          document.querySelectorAll(".rail-btn").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
+          document.querySelectorAll(".view-panel").forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === view));
+        });
+      });
+    </script>
+    <script src="/app.js??v=mobile-nav-6"></script>
+  </body>
+</html>

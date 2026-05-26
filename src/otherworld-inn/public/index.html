@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>异世旅社</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bitter:wght@400;500;700&family=Noto+Sans+SC:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 顶栏 -->
+<header class="top-bar">
+  <div class="top-left">
+    <span class="logo-text">异世旅社</span>
+    <span class="logo-sub">OTHERWORLD INN</span>
+  </div>
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="overview">总览</button>
+    <button class="tab-btn" data-tab="play">游戏</button>
+    <button class="tab-btn" data-tab="history">历史</button>
+    <button class="tab-btn" data-tab="intel">信息</button>
+    <button class="tab-btn" data-tab="prompts">调试</button>
+    <button class="tab-btn" data-tab="logs">日志</button>
+  </nav>
+  <div class="top-right">
+    <span id="clock" class="clock">00:00</span>
+  </div>
+</header>
+
+<!-- ====== 总览页 ====== -->
+<main class="tab-page active" id="page-overview">
+  <div class="overview-layout">
+    <div class="ov-hero">
+      <h1 class="ov-title">异世旅社</h1>
+      <p class="ov-subtitle">选择你的旅途主题</p>
+    </div>
+    <div class="ov-info">
+      <div class="ov-info-card">
+        <span class="ov-info-num">7</span>
+        <span class="ov-info-label">主题</span>
+      </div>
+      <div class="ov-info-card">
+        <span class="ov-info-num">2</span>
+        <span class="ov-info-label">玩家</span>
+      </div>
+      <div class="ov-info-card">
+        <span class="ov-info-num">48h</span>
+        <span class="ov-info-label">时长</span>
+      </div>
+    </div>
+    <!-- 移动端将主题列表移到按钮上方，更符合直觉 -->
+    <div class="ov-themes" id="theme-grid"></div>
+    <div class="ov-actions">
+      <button id="btn-start" class="btn-primary" disabled>开始生成世界</button>
+    </div>
+    <div class="ov-bottom">
+      <div class="ov-sessions">
+        <h3 class="section-label">SESSIONS</h3>
+        <div id="session-list"></div>
+      </div>
+      <div class="ov-guide">
+        <h3 class="section-label">HOW IT WORKS</h3>
+        <div class="guide-item">选一个主题，按下按钮。世界引擎给你和AI各发一手牌——身份、任务、秘密。你不知道对方拿了什么。</div>
+        <div class="guide-item">公屏上的话双方都看得到。切到隐藏频道——偷看文件、暗中藏东西、给食物加料。世界会判定你能不能得逞。</div>
+        <div class="guide-item">事件该来就来，不等你准备好。叛乱还没搞定，尸潮又到了。被偷了东西不翻背包不知道。</div>
+        <div class="guide-item">两天结束弹出揭秘画面——对方的所有秘密行为全部摊开。然后可以留在那个世界里继续度假。</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ====== 游戏页 ====== -->
+<main class="tab-page" id="page-play">
+  <div class="mobile-play-tabs">
+    <button class="m-play-tab active" data-target="chat">聊天</button>
+    <button class="m-play-tab" data-target="char">角色</button>
+    <button class="m-play-tab" data-target="env">环境</button>
+    <button class="m-play-tab" data-target="inv">背包</button>
+  </div>
+  <div class="play-layout" data-mobile-tab="chat">
+    <!-- 左栏 -->
+    <aside class="play-left">
+      <div class="card card-warm">
+        <span class="card-label">PROFILE</span>
+        <div class="profile-inner">
+          <div class="avatar-placeholder"></div>
+          <div>
+            <div id="my-name" class="profile-name">等待中</div>
+            <div id="my-role" class="profile-role">尚未分配角色</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card-warm">
+        <span class="card-label">QUEST</span>
+        <div id="quest-body" class="card-body">
+          <div class="empty-hint">还没有任务</div>
+        </div>
+      </div>
+
+      <div class="card card-warm">
+        <div class="card-header-row">
+          <span class="card-label">STATUS</span>
+          <div class="stat-tabs">
+            <button id="stats-prev" class="stat-arrow">&lt;</button>
+            <span id="stats-tab-label" class="stat-tab-name">外貌</span>
+            <button id="stats-next" class="stat-arrow">&gt;</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="stats-page active" data-stat="look"><span class="stat-dot"></span><span id="stat-look">—</span></div>
+          <div class="stats-page" data-stat="outfit"><span class="stat-dot"></span><span id="stat-outfit">—</span></div>
+          <div class="stats-page" data-stat="held"><span class="stat-dot"></span><span id="stat-held">—</span></div>
+          <div class="stats-page" data-stat="body"><span class="stat-dot"></span><span id="stat-body">—</span></div>
+        </div>
+      </div>
+
+      <div class="card card-warm card-inv">
+        <span class="card-label">INVENTORY</span>
+        <div id="inv-body" class="card-body">
+          <div class="empty-hint">背包是空的</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 中栏 -->
+    <section class="play-center">
+      <div class="play-status-bar">
+        <span id="turn-display">轮次 0</span>
+        <span id="time-display">—</span>
+        <span id="clock2" class="clock-sm">00:00</span>
+      </div>
+
+      <div class="seat-switch" aria-label="席位视角">
+        <button class="seat-btn active" type="button" data-player="A">你</button>
+        <button class="seat-btn" type="button" data-player="B">Codex</button>
+        <button class="seat-btn" type="button" data-player="C">Claude</button>
+      </div>
+
+      <div class="chat-container">
+        <div id="chat-area" class="chat-area">
+          <div class="chat-system-msg">世界正在等待...</div>
+        </div>
+      </div>
+
+      <div class="input-area">
+        <button id="btn-mode" class="btn-mode">
+          <span class="mode-icon">🌍</span>
+          <span class="mode-label">公开</span>
+        </button>
+        <textarea id="chat-input" class="chat-input" placeholder="输入消息... (Shift+Enter换行)" rows="2"></textarea>
+        <span id="mode-indicator" class="mode-indicator">🌍</span>
+        <button id="btn-send" class="btn-send" disabled>发送</button>
+      </div>
+
+      <div class="terminal">
+        <span class="card-label terminal-label">TERMINAL</span>
+        <div id="terminal-body" class="terminal-body">
+          <div class="term-line"><span class="term-prompt">&gt;</span> <span class="term-system">等待连接...</span></div>
+          <div class="term-line"><span class="term-cursor">_</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 右栏 -->
+    <aside class="play-right">
+      <div class="card card-cool">
+        <span class="card-label">ENVIRONMENT</span>
+        <div class="card-body env-grid">
+          <div class="env-row"><span class="env-key">时间</span><span id="env-time" class="env-val">—</span></div>
+          <div class="env-row"><span class="env-key">轮次</span><span id="env-turns" class="env-val">0</span></div>
+          <div class="env-row"><span class="env-key">下次事件</span><span id="env-next-event" class="env-val">—</span></div>
+        </div>
+      </div>
+
+      <div class="card card-cool">
+        <span class="card-label">NOTES</span>
+        <div class="card-body">
+          <div class="empty-hint" id="dock-status">等待游戏开始</div>
+        </div>
+      </div>
+
+      <div class="card card-cool">
+        <span class="card-label">OTHERS</span>
+        <div id="other-roster" class="other-roster">
+          <div class="empty-hint">等待旁席信息</div>
+        </div>
+        <div class="card-sub-label">背包</div>
+        <div id="other-inv" class="card-body">
+          <div class="empty-hint">不知道对方有什么</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</main>
+
+<!-- ====== 历史页 ====== -->
+<main class="tab-page" id="page-history">
+  <div class="generic-page">
+    <h3 class="section-label">ARCHIVE</h3>
+    <div class="empty-hint">还没有历史记录</div>
+  </div>
+</main>
+
+<!-- ====== 信息页 ====== -->
+<main class="tab-page" id="page-intel">
+  <div class="generic-page">
+    <h3 class="section-label">INTEL</h3>
+    <div class="empty-hint">进入游戏后可查看</div>
+  </div>
+</main>
+
+<!-- ====== 调试页 ====== -->
+<main class="tab-page" id="page-prompts">
+  <div class="prompts-layout">
+    <div class="prompts-sidebar">
+      <h3 class="section-label">PROMPTS</h3>
+      <div id="prompt-list"></div>
+    </div>
+    <div class="prompts-editor">
+      <div class="prompts-toolbar">
+        <span id="prompt-filename" class="prompt-fn">选择一个文件</span>
+        <button id="btn-save-prompt" class="btn-sm" disabled>保存</button>
+      </div>
+      <textarea id="prompt-content" class="prompt-textarea" disabled placeholder="选择左侧文件查看内容"></textarea>
+    </div>
+  </div>
+</main>
+
+<!-- ====== 日志页 ====== -->
+<main class="tab-page" id="page-logs">
+  <div class="generic-page">
+    <h3 class="section-label">LOGS</h3>
+    <div class="empty-hint">先选择一个游戏</div>
+  </div>
+</main>
+
+<!-- Dock栏 -->
+<footer class="dock-bar">
+  <span class="dock-version">v0.1.0</span>
+  <div class="dock-buttons">
+    <button id="dock-world" class="dock-btn">世界</button>
+    <button id="dock-my-setting" class="dock-btn">角色</button>
+    <button id="dock-quest" class="dock-btn">任务</button>
+    <button id="dock-info" class="dock-btn">情报</button>
+    <button id="dock-npc" class="dock-btn">NPC</button>
+    <button id="dock-rules" class="dock-btn">规则</button>
+    <a href="guide.html" class="dock-btn" target="_blank">指南</a>
+    <button id="dock-settings" class="dock-btn">设置</button>
+  </div>
+</footer>
+
+<!-- 弹窗 -->
+<div id="modal-overlay" class="overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <span id="modal-title">标题</span>
+      <button id="modal-close" class="modal-x">&times;</button>
+    </div>
+    <div id="modal-body" class="modal-body"></div>
+  </div>
+</div>
+
+<!-- 设置面板 -->
+<div id="settings-overlay" class="overlay" style="display:none">
+  <div class="modal modal-settings">
+    <div class="modal-header">
+      <span>设置</span>
+      <button id="settings-close" class="modal-x">&times;</button>
+    </div>
+    <div class="modal-body">
+      <h3 class="section-label">API</h3>
+      <div class="form-group">
+        <label>模型</label>
+        <input id="set-model" type="text" class="form-input" placeholder="deepseek-v4-flash">
+      </div>
+      <div class="form-group">
+        <label>密钥</label>
+        <input id="set-key" type="password" class="form-input" placeholder="sk-...">
+      </div>
+      <div class="form-group">
+        <label>端点</label>
+        <input id="set-base-url" type="text" class="form-input" placeholder="https://api.deepseek.com">
+      </div>
+      <button id="btn-save-api" class="btn-sm">保存API配置</button>
+      <h3 class="section-label" style="margin-top:24px">骰子配置</h3>
+      <div id="dice-display" class="dice-grid"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+node_modules/
+
+# Local runtime data
+data/
+.cli-state.json
+
+# Local secrets
+server/config.local.json
+server/config.json
+API key.txt
+.env
+.env.*
+!.env.example
+
+# Local backups and scratch files
+*.bak
+*.log
+*.tmp
+*.temp

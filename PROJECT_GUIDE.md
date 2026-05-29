@@ -2,12 +2,12 @@
 
 Read this file first before changing the backend.
 
-This repo is the active Roundtable codebase. The current implementation is already behavior-rich and should be treated as the source of truth for product behavior. Do not replace it wholesale with the older `<legacy-roundtable-root>` implementation. That older project is useful as a reference for cleaner persistence layering, but it does not yet carry all of the current Roundtable behavior.
+This repo is the active Roundtable codebase and is the source of truth for product behavior. It is a standalone app: it no longer depends on any external Cyberboss runtime, and `src/core/config.js` reads `ROUNDTABLE_*` environment variables only.
 
 ## Current Status
 
 - `npm.cmd run check` passes.
-- `npm.cmd test` passes with 92 tests.
+- `npm.cmd test` passes with 109 tests across 14 test files.
 - The backend has been split out of the old giant server file. Store, state, runtime, approval, check-in, summary, upload, TTS, embedding, and provider helpers are extracted; prompt construction and some orchestration helpers still live in `roundtable-server.js`.
 - Core persistence is SQLite-backed for topics, messages, events, approvals, speaker seen state, summaries, check-ins, runtime sessions, storage notes, and study tracker data.
 - Legacy split JSON import has been retired. The app now starts from SQLite only.
@@ -45,7 +45,7 @@ This repo is the active Roundtable codebase. The current implementation is alrea
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| SQLite bootstrap + migrations | done | `migrations/` directory with 6 migration files |
+| SQLite bootstrap + migrations | done | `migrations/` directory with 7 migration files |
 | Topics | done | now stored in `topics`; container fields are explicit |
 | Messages | done | stored in `messages` with FTS5 virtual table (`messages_fts`) |
 | Message attachments | done | `attachments_json` on messages (003); uploaded files live under the state dir |
@@ -75,6 +75,7 @@ This repo is the active Roundtable codebase. The current implementation is alrea
 | DeepSeek summary kind split | done | `work` and `casual` prompts (Chinese system prompt); model emits `kind`; server normalizes casual to drop `useful` / `decisions` / `openItems` / `latestState` |
 | MCP entry / wait shape | done | `messages_read` default limit 6 + topic summary when no `since`; `messages_send` returns `messageId` and the wait call uses it as `since` |
 | Runtime prompt cleanup | done | the duplicated `Context: fixed room "..."` line was removed from speaker / check-in prompts; AI sees only `Topic: <state.topic>` |
+| Runtime worklog | done | `runtime_runs` + `runtime_worklog_events` (007) record each runtime turn and its event trail; surfaced per-message in the UI as a worklog dot (see below) |
 
 ## First Files To Read
 
@@ -92,17 +93,11 @@ Read in this order:
 10. `src/app/roundtable-approval.js`
 11. `test/*.test.js`
 
-Use these only as reference material, not as a drop-in replacement:
-
-- `<legacy-roundtable-root>\src\db\store.js`
-- `<legacy-roundtable-root>\migrations\*.sql`
-
 If you are here to continue the storage refactor, do not start by reading the frontend. The shortest useful path is:
 
-1. inspect `migrations/001_init.sql`
+1. inspect `migrations/001_init.sql` (and the later numbered migrations)
 2. inspect the DB-backed `RoundtableStore` in `src/app/roundtable-store.js`
 3. inspect the DB-backed path in `SummaryStore`
-4. inspect the older legacy SQLite layer only for comparison
 
 ## Current Backend Shape
 
@@ -340,6 +335,29 @@ study_progress_entries                              -- 004
 - next_adjustment TEXT NOT NULL DEFAULT ''
 - created_at TEXT NOT NULL DEFAULT ''
 - updated_at TEXT NOT NULL DEFAULT ''
+
+runtime_runs                                        -- 007
+- id TEXT PRIMARY KEY
+- topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE
+- message_id TEXT NOT NULL DEFAULT ''
+- kind TEXT NOT NULL DEFAULT 'runtime_turn'
+- speaker TEXT NOT NULL DEFAULT ''
+- status TEXT NOT NULL DEFAULT 'running'
+- title / phase / detail TEXT NOT NULL DEFAULT ''
+- thread_id / turn_id TEXT NOT NULL DEFAULT ''
+- started_at / updated_at / ended_at TEXT NOT NULL DEFAULT ''
+
+runtime_worklog_events                              -- 007
+- id INTEGER PRIMARY KEY AUTOINCREMENT
+- run_id TEXT NOT NULL REFERENCES runtime_runs(id) ON DELETE CASCADE
+- topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE
+- message_id TEXT NOT NULL DEFAULT ''
+- seq INTEGER NOT NULL
+- type TEXT NOT NULL DEFAULT ''
+- level TEXT NOT NULL DEFAULT 'info'
+- title TEXT NOT NULL DEFAULT ''
+- detail_json TEXT NOT NULL DEFAULT '{}'
+- created_at TEXT NOT NULL DEFAULT ''
 ```
 
 Key indexes:
@@ -406,6 +424,7 @@ Current SQLite behavior worth knowing:
 - attachments are stored under `<state dir>/uploads` and referenced from message metadata
 - `[VOICE]` replies can create audio files via ElevenLabs; missing keys or voice ids fall back to text
 - maxRounds is always `DEFAULT_MAX_ROUNDS` (4) at topic creation; there is no API endpoint to change it. The round counter in the frontend shows only the current round number (not `round/max`). The DB column is kept for backward compatibility.
+- each runtime turn is recorded in `runtime_runs`, and its lifecycle events (queued / started / context / thinking / tool calls / approvals / reply / completed) in `runtime_worklog_events`. `runtimeWorklogSnapshot()` builds a per-message worklog keyed by `run.messageId`. The lightweight snapshot (used by the main state payload) drops heavy detail fields via `compactRuntimeWorklogEventForUi`, but keeps a capped `thinking.updated` text so the per-message worklog dot can show the thinking trail inline. The frontend renders this as a small dot in each AI message's meta row that expands to a humanized event list.
 
 ## Study Tracker Handoff
 

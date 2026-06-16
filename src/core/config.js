@@ -33,6 +33,19 @@ function readConfig() {
     elevenLabsApiKey: readTextEnv("ELEVENLABS_API_KEY"),
     elevenLabsVoiceClaude: readTextEnv("ELEVENLABS_VOICE_CLAUDE"),
     elevenLabsVoiceCodex: readTextEnv("ELEVENLABS_VOICE_CODEX"),
+    // API adapter config per speaker
+    claudeAdapter: readTextEnv("CLAUDE_ADAPTER"),
+    claudeProvider: readTextEnv("CLAUDE_PROVIDER") || "anthropic",
+    claudeApiKey: readTextEnv("CLAUDE_API_KEY") || readTextEnv("ANTHROPIC_API_KEY"),
+    claudeBaseUrl: readTextEnv("CLAUDE_BASE_URL"),
+    codexAdapter: readTextEnv("CODEX_ADAPTER"),
+    codexProvider: readTextEnv("CODEX_PROVIDER") || "openai",
+    codexApiKey: readTextEnv("CODEX_API_KEY") || readTextEnv("OPENAI_API_KEY"),
+    codexBaseUrl: readTextEnv("CODEX_BASE_URL"),
+    // extra providers (for settings UI)
+    deepseekApiKey: readTextEnv("DEEPSEEK_API_KEY"),
+    geminiApiKey: readTextEnv("GEMINI_API_KEY"),
+    kimiApiKey: readTextEnv("KIMI_API_KEY"),
   };
 }
 

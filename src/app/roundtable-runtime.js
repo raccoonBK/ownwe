@@ -1,5 +1,6 @@
 const { createCodexRuntimeAdapter } = require("../adapters/runtime/codex");
 const { createClaudeCodeRuntimeAdapter } = require("../adapters/runtime/claudecode");
+const { createApiAgentAdapter } = require("../adapters/api/api-agent-adapter");
 const {
   normalizeSpeakerTarget,
   normalizeText,
@@ -35,8 +36,8 @@ class RuntimeHub {
     this.turnTimeoutMs = turnTimeoutMs;
     this.turnStartTimeoutMs = turnStartTimeoutMs;
     this.adapters = {
-      codex: createCodexRuntimeAdapter({ ...codexRuntimeConfig, runtime: "codex" }),
-      claude: createClaudeCodeRuntimeAdapter({ ...claudeRuntimeConfig, runtime: "claudecode" }),
+      codex: resolveAdapter("codex", codexRuntimeConfig, config),
+      claude: resolveAdapter("claude", claudeRuntimeConfig, config),
     };
     this.listeners = [];
     this.waitersBySpeaker = new Map();
@@ -442,6 +443,35 @@ function isCheckinThreadUnavailableError(error) {
 
 function formatError(error) {
   return error instanceof Error ? error.message : String(error || "unknown error");
+}
+
+// Pick CLI or API adapter based on config
+function resolveAdapter(speakerId, runtimeConfig, globalConfig) {
+  // Check for API mode config: e.g. CLAUDE_ADAPTER=api or CODEX_ADAPTER=api
+  const upperSpeaker = speakerId.toUpperCase();
+  const adapterMode = globalConfig[`${speakerId}Adapter`] || process.env[`${upperSpeaker}_ADAPTER`] || "";
+  const apiKey = globalConfig[`${speakerId}ApiKey`] || process.env[`${upperSpeaker}_API_KEY`] || "";
+  const provider = globalConfig[`${speakerId}Provider`] || process.env[`${upperSpeaker}_PROVIDER`] || (speakerId === "claude" ? "anthropic" : "openai");
+
+  // Auto-detect: use API adapter when key is set and no CLI is configured / CLI mode not forced
+  const useApi = adapterMode === "api" || (apiKey && adapterMode !== "cli");
+
+  if (useApi) {
+    console.log(`[runtime] ${speakerId} → api adapter (provider=${provider})`);
+    return createApiAgentAdapter({
+      ...runtimeConfig,
+      speakerId,
+      provider,
+      apiKey,
+      model: globalConfig[`${speakerId}Model`] || process.env[`${upperSpeaker}_MODEL`] || "",
+      baseUrl: globalConfig[`${speakerId}BaseUrl`] || process.env[`${upperSpeaker}_BASE_URL`] || "",
+    });
+  }
+
+  if (speakerId === "claude") {
+    return createClaudeCodeRuntimeAdapter({ ...runtimeConfig, runtime: "claudecode" });
+  }
+  return createCodexRuntimeAdapter({ ...runtimeConfig, runtime: "codex" });
 }
 
 module.exports = {

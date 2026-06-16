@@ -11,6 +11,17 @@ try {
 }
 
 const { readConfig } = require("../core/config");
+const { classify } = require("./ownwe-classifier");
+const {
+  buildOwnWeContext,
+  listCharacters,
+  getCharacter,
+  upsertCharacter,
+  deleteCharacter,
+  readMemories,
+  extractMemoriesFromTurn,
+  getRelationshipState,
+} = require("./ownwe-context");
 const {
   RoundtableCheckinPoller,
   RoundtableCheckinStore,
@@ -590,6 +601,12 @@ class RoundtableServer {
       return;
     }
 
+    // OwnWe GET endpoints
+    if (req.method === "GET" && requestUrl.pathname === "/api/ownwe/characters") {
+      this.sendJson(res, 200, listCharacters(this.config.dbPath));
+      return;
+    }
+
     if (req.method !== "POST") {
       this.sendJson(res, 405, { error: "method not allowed" });
       return;
@@ -759,6 +776,39 @@ class RoundtableServer {
         this.sendJson(res, 200, { ok: deleted });
         return;
       }
+      // ── OwnWe character management ──────────────────────────────
+      case "/api/ownwe/characters/upsert": {
+        const char = upsertCharacter(this.config.dbPath, body);
+        this.sendJson(res, 200, char);
+        return;
+      }
+      case "/api/ownwe/characters/delete": {
+        deleteCharacter(this.config.dbPath, body.id);
+        this.sendJson(res, 200, { ok: true });
+        return;
+      }
+      case "/api/ownwe/bind": {
+        // Bind a character to a speaker slot in the current topic
+        const { characterId, speaker: bindSpeaker = "claude" } = body;
+        const topicId = this.store.get()?.id;
+        if (topicId && characterId) {
+          const db = require("../db/connection").getDb(this.config.dbPath);
+          db.prepare(`
+            INSERT INTO ownwe_character_bindings (topic_id, speaker, character_id)
+            VALUES (?, ?, ?)
+            ON CONFLICT(topic_id, speaker) DO UPDATE SET character_id = excluded.character_id, bound_at = datetime('now')
+          `).run(topicId, bindSpeaker, characterId);
+        }
+        this.sendJson(res, 200, { ok: true, topicId, characterId, speaker: bindSpeaker });
+        return;
+      }
+      case "/api/ownwe/room-mode": {
+        // Pin A/B mode for current room
+        this._ownweRoomMode = body.mode || "";
+        this.sendJson(res, 200, { ok: true, mode: this._ownweRoomMode });
+        return;
+      }
+      // ────────────────────────────────────────────────────────────
       case "/api/desktop/send": {
         const result = this.addDesktopMessage(body);
         this.sendJson(res, 202, result);
@@ -1944,7 +1994,19 @@ class RoundtableServer {
   }
 
   scheduleReplies(body = {}) {
-    const replyBody = withResolvedReplyTarget(body);
+    let replyBody = withResolvedReplyTarget(body);
+    // OwnWe: if no explicit target, classify and set target + mode
+    if (!normalizeSpeakerTarget(replyBody.target)) {
+      const text = normalizeText(body.text || body.message || "");
+      const result = classify(text, { pinnedMode: this._ownweRoomMode || "" });
+      replyBody = {
+        ...replyBody,
+        target: result.speaker === "tool" ? "codex" : "claude",
+        ownweMode: result.mode,
+        ownweClassifier: result,
+      };
+      console.log(`[ownwe] classify mode=${result.mode} speaker=${result.speaker} confidence=${result.confidence.toFixed(2)}`);
+    }
     setImmediate(() => {
       try {
         this.maybeRunTargetedReply(replyBody);
@@ -2360,6 +2422,8 @@ class RoundtableServer {
           speaker,
           state: runtimeState,
           stateDir: this.config?.stateDir || "",
+          dbPath: this.config?.dbPath || "",
+          ownweMode: body?.ownweMode || "B",
         });
         const runtimeAttachments = resolveRuntimeAttachments(runtimeState, speaker, this.config?.stateDir || "");
         this.persistRuntimeRunStart(state.id, runtimeRunId, {
@@ -2969,6 +3033,37 @@ class RoundtableServer {
       if (speakerTurnKey) {
         this.pendingMessageBySpeakerTurnKey.delete(speakerTurnKey);
       }
+      // Wire OwnWe memory extraction (best-effort, non-blocking)
+      if (event.type === "runtime.turn.completed" && payload.text && this.config?.dbPath) {
+        try {
+          const state = this.store.get();
+          const topicId = state?.id || "";
+          const speaker = normalizeText(payload.speaker);
+          if (topicId && speaker) {
+            // Check if this speaker has a character bound to this topic
+            const { getDb } = require("../db/connection");
+            const db = getDb(this.config.dbPath);
+            const binding = db.prepare(
+              "SELECT character_id FROM ownwe_character_bindings WHERE topic_id = ? AND speaker = ?"
+            ).get(topicId, speaker);
+            if (binding?.character_id) {
+              // Find the most recent user message before this AI reply
+              const messages = Array.isArray(state?.messages) ? state.messages : [];
+              const userMsg = [...messages].reverse().find((m) => m.speaker === "user" && !m.pending);
+              extractMemoriesFromTurn({
+                charId: binding.character_id,
+                userText: userMsg?.text || "",
+                aiText: payload.text,
+                topicId,
+                dbPath: this.config.dbPath,
+                mode: this._ownweRoomMode || "B",
+              });
+            }
+          }
+        } catch {
+          // never let memory extraction crash the turn handler
+        }
+      }
     }
   }
 
@@ -3091,7 +3186,28 @@ class RoundtableServer {
   }
 }
 
-function buildRuntimePrompt({ speaker, state, stateDir = "" }) {
+function buildRuntimePrompt({ speaker, state, stateDir = "", dbPath = "", ownweMode = "B" }) {
+  // OwnWe: if a character is bound to this speaker+topic, use dynamic context
+  if (dbPath && state?.id) {
+    try {
+      const db = require("../db/connection").getDb(dbPath);
+      const binding = db.prepare(
+        "SELECT character_id FROM ownwe_character_bindings WHERE topic_id = ? AND speaker = ?"
+      ).get(state.id, speaker);
+      if (binding?.character_id) {
+        const character = getCharacter(dbPath, binding.character_id);
+        if (character) {
+          const memories = readMemories(dbPath, { charId: character.id, limit: 6 });
+          const relationshipState = getRelationshipState(dbPath, character.id);
+          const transcript = formatTranscript(state.messages, { maxMessages: 20, stateDir, speaker });
+          return buildOwnWeContext({ character, memories, transcript, mode: ownweMode, relationshipState });
+        }
+      }
+    } catch (err) {
+      console.warn("[ownwe] context build failed, falling back:", err.message);
+    }
+  }
+
   const name = speaker === "codex" ? "Codex" : "Claude Code";
   const peer = speaker === "codex" ? "Claude Code" : "Codex";
   const otherworldContext = buildOtherworldRuntimeContext(state, speaker);

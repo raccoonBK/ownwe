@@ -55,6 +55,10 @@
         </button>
 
         <div class="rail-spacer"></div>
+        <button class="rail-btn" type="button" data-view="characters" title="角色管理">
+          <span>⌁</span>
+          <small>角色</small>
+        </button>
         <button class="rail-btn" type="button" data-view="worklog" title="工作日志">
           <span>⋯</span>
           <small>日志</small>
@@ -689,6 +693,111 @@
       </aside>
     </section>
 
+    <!-- OwnWe Characters Panel -->
+    <section class="main-card view-panel characters-panel" data-panel="characters">
+      <header class="panel-head">
+        <h2>角色管理</h2>
+        <button type="button" id="newCharacterButton" class="panel-action-btn">＋ 新建角色</button>
+      </header>
+      <div id="charactersList" class="characters-list">
+        <p class="empty-hint">暂无角色 — 点击「新建角色」创建</p>
+      </div>
+    </section>
+
+    <!-- OwnWe Character Edit Dialog -->
+    <dialog id="characterDialog" class="character-dialog">
+      <form id="characterForm" method="dialog" class="character-form">
+        <input id="charIdInput" type="hidden">
+        <header>
+          <h3 id="characterDialogTitle">新建角色</h3>
+          <button id="characterDialogClose" type="button" aria-label="关闭">✕</button>
+        </header>
+
+        <div class="char-form-row">
+          <label class="char-label-short">
+            <span>头像</span>
+            <input id="charEmojiInput" type="text" maxlength="2" placeholder="🤖" style="width:3rem;text-align:center">
+          </label>
+          <label class="char-label-grow">
+            <span>名字</span>
+            <input id="charNameInput" type="text" autocomplete="off" placeholder="例：尤金" required>
+          </label>
+          <label class="char-label-short">
+            <span>代号</span>
+            <input id="charCodenameInput" type="text" autocomplete="off" placeholder="claude / codex">
+          </label>
+        </div>
+
+        <label>
+          <span>人格 Prompt <small>（直接粘贴你写的角色设定，越详细越好）</small></span>
+          <textarea id="charPersonaInput" rows="12" placeholder="你叫尤金·怀尔特，是一个...&#10;&#10;【语气风格】...&#10;【记忆偏好】...&#10;【禁忌】..."></textarea>
+        </label>
+
+        <div class="char-form-row">
+          <label class="char-label-grow">
+            <span>AI 提供商</span>
+            <select id="charProviderSelect">
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="gemini">Gemini</option>
+              <option value="kimi">Kimi</option>
+            </select>
+          </label>
+          <label class="char-label-grow">
+            <span>模型（留空用默认）</span>
+            <input id="charModelInput" type="text" autocomplete="off" placeholder="claude-sonnet-4-6">
+          </label>
+        </div>
+
+        <label>
+          <span>专属 API Key（留空用全局设置）</span>
+          <input id="charApiKeyInput" type="password" autocomplete="off" placeholder="sk-...">
+        </label>
+
+        <label>
+          <span>模式倾向</span>
+          <select id="charModeBiasSelect">
+            <option value="auto">自动（分类器决定）</option>
+            <option value="B">陪伴档 B</option>
+            <option value="A">工具档 A</option>
+          </select>
+        </label>
+
+        <footer>
+          <button id="charDeleteButton" type="button" class="button danger" hidden>删除</button>
+          <button id="charCancelButton" type="button" class="button">取消</button>
+          <button type="submit" class="button primary">保存</button>
+        </footer>
+      </form>
+    </dialog>
+
+    <!-- OwnWe Bind Dialog -->
+    <dialog id="bindDialog" class="bind-dialog">
+      <form id="bindForm" method="dialog" class="bind-form">
+        <header>
+          <h3>绑定角色到当前话题</h3>
+          <button id="bindDialogClose" type="button" aria-label="关闭">✕</button>
+        </header>
+        <p id="bindTopicLabel" style="color:var(--text-muted);font-size:.85rem"></p>
+        <label>
+          <span>说话者槽位</span>
+          <select id="bindSpeakerSelect">
+            <option value="claude">claude（左侧）</option>
+            <option value="codex">codex（右侧）</option>
+          </select>
+        </label>
+        <label>
+          <span>角色</span>
+          <select id="bindCharSelect"></select>
+        </label>
+        <footer>
+          <button id="bindCancelButton" type="button" class="button">取消</button>
+          <button type="submit" class="button primary">绑定</button>
+        </footer>
+      </form>
+    </dialog>
+
     <dialog id="summaryEditDialog" class="summary-edit-dialog">
       <form id="summaryEditForm" method="dialog" class="summary-edit-form">
         <input id="summaryEditId" type="hidden">
@@ -738,5 +847,222 @@
       });
     </script>
     <script src="/app.js??v=quiet-refresh-1"></script>
+
+    <!-- OwnWe character management -->
+    <script>
+    (function () {
+      const $ = (id) => document.getElementById(id);
+
+      // ── Panel nav (characters panel is added dynamically) ──────────────────
+      document.querySelector('[data-view="characters"]')?.addEventListener("click", () => {
+        loadCharacters();
+      });
+
+      // ── Character list ─────────────────────────────────────────────────────
+      async function loadCharacters() {
+        try {
+          const res = await fetch("/api/ownwe/characters");
+          const chars = await res.json();
+          renderCharacterList(chars);
+        } catch (e) {
+          console.error("[ownwe] load characters failed", e);
+        }
+      }
+
+      function renderCharacterList(chars) {
+        const list = $("charactersList");
+        if (!list) return;
+        if (!chars.length) {
+          list.innerHTML = '<p class="empty-hint">暂无角色 — 点击「新建角色」创建</p>';
+          return;
+        }
+        list.innerHTML = chars.map((c) => `
+          <div class="char-card" data-id="${c.id}">
+            <span class="char-avatar">${c.avatar_emoji || "🤖"}</span>
+            <div class="char-info">
+              <strong>${escHtml(c.name)}</strong>
+              <small>${escHtml(c.codename || c.provider || "")}</small>
+            </div>
+            <div class="char-actions">
+              <button type="button" class="char-edit-btn btn-sm" data-id="${c.id}">编辑</button>
+              <button type="button" class="char-bind-btn btn-sm" data-id="${c.id}">绑定话题</button>
+            </div>
+          </div>
+        `).join("");
+
+        list.querySelectorAll(".char-edit-btn").forEach((btn) => {
+          btn.addEventListener("click", () => openCharDialog(btn.dataset.id, chars));
+        });
+        list.querySelectorAll(".char-bind-btn").forEach((btn) => {
+          btn.addEventListener("click", () => openBindDialog(btn.dataset.id, chars));
+        });
+      }
+
+      // ── New / Edit dialog ──────────────────────────────────────────────────
+      $("newCharacterButton")?.addEventListener("click", () => openCharDialog(null, []));
+
+      function openCharDialog(charId, chars) {
+        const char = chars.find((c) => c.id === charId) || {};
+        $("characterDialogTitle").textContent = charId ? "编辑角色" : "新建角色";
+        $("charIdInput").value = char.id || "";
+        $("charEmojiInput").value = char.avatar_emoji || "";
+        $("charNameInput").value = char.name || "";
+        $("charCodenameInput").value = char.codename || "";
+        $("charPersonaInput").value = char.persona_prompt || "";
+        $("charProviderSelect").value = char.provider || "anthropic";
+        $("charModelInput").value = char.model || "";
+        $("charApiKeyInput").value = "";  // never pre-fill API key
+        $("charModeBiasSelect").value = char.mode_bias || "auto";
+        $("charDeleteButton").hidden = !charId;
+        $("characterDialog").showModal();
+      }
+
+      $("characterDialogClose")?.addEventListener("click", () => $("characterDialog").close());
+      $("charCancelButton")?.addEventListener("click", () => $("characterDialog").close());
+
+      $("characterForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const payload = {
+          id: $("charIdInput").value || undefined,
+          avatar_emoji: $("charEmojiInput").value || "🤖",
+          name: $("charNameInput").value.trim(),
+          codename: $("charCodenameInput").value.trim(),
+          persona_prompt: $("charPersonaInput").value,
+          provider: $("charProviderSelect").value,
+          model: $("charModelInput").value.trim(),
+          api_key_override: $("charApiKeyInput").value.trim(),
+          mode_bias: $("charModeBiasSelect").value,
+        };
+        try {
+          const res = await fetch("/api/ownwe/characters/upsert", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          $("characterDialog").close();
+          loadCharacters();
+        } catch (err) {
+          alert("保存失败：" + err.message);
+        }
+      });
+
+      $("charDeleteButton")?.addEventListener("click", async () => {
+        const id = $("charIdInput").value;
+        if (!id || !confirm("确认删除这个角色？")) return;
+        try {
+          await fetch("/api/ownwe/characters/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id }),
+          });
+          $("characterDialog").close();
+          loadCharacters();
+        } catch (err) {
+          alert("删除失败：" + err.message);
+        }
+      });
+
+      // ── Bind dialog ────────────────────────────────────────────────────────
+      function openBindDialog(charId, chars) {
+        const topicId = document.querySelector("[data-topic-id]")?.dataset?.topicId
+          || window.__ownweCurrentTopicId || "";
+        $("bindTopicLabel").textContent = topicId ? `话题 ID: ${topicId}` : "（请先打开一个话题）";
+        const sel = $("bindCharSelect");
+        sel.innerHTML = chars.map((c) =>
+          `<option value="${c.id}" ${c.id === charId ? "selected" : ""}>${c.avatar_emoji || "🤖"} ${escHtml(c.name)}</option>`
+        ).join("");
+        $("bindDialog").showModal();
+      }
+
+      $("bindDialogClose")?.addEventListener("click", () => $("bindDialog").close());
+      $("bindCancelButton")?.addEventListener("click", () => $("bindDialog").close());
+
+      $("bindForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const topicId = document.querySelector("[data-topic-id]")?.dataset?.topicId
+          || window.__ownweCurrentTopicId || "";
+        if (!topicId) { alert("请先打开一个话题再绑定角色"); return; }
+        const payload = {
+          topicId,
+          speaker: $("bindSpeakerSelect").value,
+          characterId: $("bindCharSelect").value,
+        };
+        try {
+          const res = await fetch("/api/ownwe/bind", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          $("bindDialog").close();
+          alert(`已绑定！下次发送消息时角色生效。`);
+        } catch (err) {
+          alert("绑定失败：" + err.message);
+        }
+      });
+
+      function escHtml(str) {
+        return String(str || "").replace(/[&<>"']/g, (c) =>
+          ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+        );
+      }
+
+      // Expose topic setter for the main app.js to call
+      window.ownweSetCurrentTopic = (id) => { window.__ownweCurrentTopicId = id; };
+    })();
+    </script>
+
+    <style>
+    /* OwnWe character panel styles */
+    .characters-panel { padding: 1rem; overflow-y: auto; }
+    .characters-list { display: flex; flex-direction: column; gap: .75rem; margin-top: 1rem; }
+    .char-card {
+      display: flex; align-items: center; gap: .75rem;
+      padding: .75rem 1rem; border-radius: 10px;
+      background: var(--surface, #1e1e1e); border: 1px solid var(--border, #333);
+    }
+    .char-avatar { font-size: 1.6rem; flex-shrink: 0; }
+    .char-info { flex: 1; min-width: 0; }
+    .char-info strong { display: block; }
+    .char-info small { color: var(--text-muted, #888); font-size: .8rem; }
+    .char-actions { display: flex; gap: .4rem; flex-shrink: 0; }
+    .btn-sm { padding: .25rem .6rem; font-size: .78rem; border-radius: 6px; border: 1px solid var(--border, #444); background: transparent; color: inherit; cursor: pointer; }
+    .btn-sm:hover { background: var(--hover, #2a2a2a); }
+    .empty-hint { color: var(--text-muted, #888); font-size: .9rem; }
+
+    /* Character dialog */
+    .character-dialog, .bind-dialog {
+      background: var(--bg, #141414); color: inherit;
+      border: 1px solid var(--border, #333); border-radius: 14px;
+      padding: 0; width: min(600px, 96vw); max-height: 90vh; overflow: hidden;
+    }
+    .character-dialog::backdrop, .bind-dialog::backdrop { background: rgba(0,0,0,.55); }
+    .character-form, .bind-form {
+      display: flex; flex-direction: column; gap: .85rem;
+      padding: 1.4rem; overflow-y: auto; max-height: 90vh;
+    }
+    .character-form header, .bind-form header {
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .character-form label span, .bind-form label span { display: block; font-size: .8rem; color: var(--text-muted, #888); margin-bottom: .3rem; }
+    .character-form input, .character-form textarea, .character-form select,
+    .bind-form input, .bind-form select {
+      width: 100%; padding: .5rem .7rem; border-radius: 8px;
+      border: 1px solid var(--border, #444); background: var(--surface, #1e1e1e);
+      color: inherit; font-size: .9rem; font-family: inherit; box-sizing: border-box;
+    }
+    .character-form textarea { resize: vertical; }
+    .char-form-row { display: flex; gap: .7rem; }
+    .char-label-short { flex: 0 0 auto; }
+    .char-label-grow { flex: 1; }
+    .character-form footer, .bind-form footer {
+      display: flex; gap: .5rem; justify-content: flex-end; padding-top: .5rem;
+    }
+    .button { padding: .45rem 1rem; border-radius: 8px; border: 1px solid var(--border, #444); background: transparent; color: inherit; cursor: pointer; font-size: .9rem; }
+    .button.primary { background: var(--accent, #4a6fa5); border-color: var(--accent, #4a6fa5); color: #fff; }
+    .button.danger { border-color: #c0392b; color: #c0392b; }
+    .button:hover { opacity: .85; }
+    </style>
   </body>
 </html>

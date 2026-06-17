@@ -106,7 +106,7 @@ class RuntimeHub {
     return normalizeText(adapter.getSessionStore().getThreadIdForWorkspace(bindingKey, this.workspaceRoot));
   }
 
-  async sendTurn({ speaker, topicId = "", text, attachments = [], onTurnStarted = null, requireExistingThread = false }) {
+  async sendTurn({ speaker, topicId = "", text, attachments = [], onTurnStarted = null, requireExistingThread = false, ownweMode = "B" }) {
     await this.initializeSpeaker(speaker);
     const adapter = this.adapters[speaker];
     if (!adapter) {
@@ -144,6 +144,7 @@ class RuntimeHub {
         effort: speaker === "codex" ? this.config.codexReasoningEffort : "",
         accessMode: this.config.codexAccessMode,
         allowCreateThread: !requireExistingThread,
+        ownweMode,
         onTurnStarted: bindTurn,
       });
     } catch (error) {

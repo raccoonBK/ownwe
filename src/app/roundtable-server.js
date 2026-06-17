@@ -2585,6 +2585,7 @@ class RoundtableServer {
           topicId: state.id,
           text: runtimePrompt,
           attachments: runtimeAttachments,
+          ownweMode: this._lastOwnweMode || "B",
           onTurnStarted: (turn) => {
             this.registerPendingMessageTurn(turn, pendingMessageId);
             this.store.update((draft) => {

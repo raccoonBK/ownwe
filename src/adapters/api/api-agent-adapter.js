@@ -31,6 +31,16 @@ const PROVIDER_CONFIGS = {
   },
 };
 
+// Cost tiers per provider: cheap for everyday chat (mode B), strong for tool/complex (mode A).
+// Used only when a character has no explicit model set.
+const MODEL_TIERS = {
+  anthropic: { cheap: "claude-haiku-4-5", strong: "claude-sonnet-4-6" },
+  deepseek: { cheap: "deepseek-chat", strong: "deepseek-reasoner" },
+  openai: { cheap: "gpt-4o-mini", strong: "gpt-4o" },
+  gemini: { cheap: "gemini-2.0-flash", strong: "gemini-2.5-pro" },
+  kimi: { cheap: "moonshot-v1-8k", strong: "moonshot-v1-32k" },
+};
+
 function createApiAgentAdapter(config) {
   const runtimeId = `api-${config.speakerId || "agent"}`;
   const sessionStore = new SessionStore({
@@ -70,17 +80,25 @@ function createApiAgentAdapter(config) {
     return callOpenAICompat({ apiKey, baseUrl: resolvedBase, path: providerCfg.path, model: resolvedModel, messages, systemPrompt });
   }
 
-  async function sendTextTurn({ bindingKey, workspaceRoot, text, attachments = [], metadata = {}, model = "", allowCreateThread = true, onTurnStarted = null }) {
+  async function sendTextTurn({ bindingKey, workspaceRoot, text, attachments = [], metadata = {}, model = "", allowCreateThread = true, onTurnStarted = null, ownweMode = "B" }) {
     let provider = config.provider || "anthropic";
     let apiKey = config.apiKey || "";
-    let resolvedModel = model || config.model || "";
+    let explicitModel = model || config.model || "";
 
     // OwnWe: if a character is bound to this topic+speaker, use ITS provider/key/model.
     const charOverride = resolveCharacterProvider(config.dbPath, bindingKey);
     if (charOverride) {
       provider = charOverride.provider;
       apiKey = charOverride.apiKey;
-      if (charOverride.model) resolvedModel = charOverride.model;
+      if (charOverride.model) explicitModel = charOverride.model;
+    }
+
+    // Cost-aware auto model switch: when no explicit model is set, pick a cheap tier
+    // for companion/simple turns (mode B) and a stronger tier for tool/complex (mode A).
+    let resolvedModel = explicitModel;
+    if (!resolvedModel) {
+      const tier = MODEL_TIERS[provider];
+      if (tier) resolvedModel = (ownweMode === "A") ? tier.strong : tier.cheap;
     }
     if (!resolvedModel) resolvedModel = PROVIDER_CONFIGS[provider]?.defaultModel || "";
 

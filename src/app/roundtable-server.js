@@ -2138,6 +2138,7 @@ class RoundtableServer {
       }
       const result = classify(text, { pinnedMode });
       const hadTarget = Boolean(normalizeSpeakerTarget(replyBody.target));
+      this._lastOwnweMode = result.mode; // read later by runNextSpeaker → buildRuntimePrompt
       replyBody = {
         ...replyBody,
         target: hadTarget ? replyBody.target : (result.speaker === "tool" ? "codex" : "claude"),
@@ -2562,7 +2563,7 @@ class RoundtableServer {
           state: runtimeState,
           stateDir: this.config?.stateDir || "",
           dbPath: this.config?.dbPath || "",
-          ownweMode: body?.ownweMode || "B",
+          ownweMode: this._lastOwnweMode || "B",
         });
         const runtimeAttachments = resolveRuntimeAttachments(runtimeState, speaker, this.config?.stateDir || "");
         this.persistRuntimeRunStart(state.id, runtimeRunId, {

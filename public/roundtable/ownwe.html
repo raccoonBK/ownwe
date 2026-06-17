@@ -298,9 +298,9 @@
       <span style="margin:0">默认开深度思考（回复更真实；关掉可省钱）</span>
     </label>
     <label>
-      <span>主动发消息频率 — <span id="cFreqLabel" style="color:var(--accent)">每 8 小时</span></span>
-      <input type="range" class="freq-slider" id="cFreq" min="0" max="72" step="2" value="8">
-      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2);margin-top:3px"><span>← 从不主动</span><span>更频繁 →</span></div>
+      <span>主动发消息频率 — <span id="cFreqLabel" style="color:var(--accent)">每天</span></span>
+      <input type="range" class="freq-slider" id="cFreq" min="0" max="9" step="1" value="1">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2);margin-top:3px"><span>← 从不</span><span>每10分钟 →</span></div>
     </label>
     <div class="modal-foot">
       <button type="button" class="btn danger" id="cDelete" style="visibility:hidden">删除</button>
@@ -778,8 +778,17 @@ $("pEditChar").addEventListener("click", () => {
 });
 
 // ── Character editor ──────────────────────────────────────────────────────
-function freqLabel(v) {
-  return Number(v) <= 0 ? "从不主动" : `每 ${v} 小时`;
+// Slider steps: 0=off, 1=24h, 2=12h, 3=8h, 4=4h, 5=2h, 6=1h, 7=0.5h, 8=0.33h, 9=0.167h
+const FREQ_H   = [0, 24, 12, 8, 4, 2, 1, 0.5, 1/3, 1/6];
+const FREQ_LBL = ["从不主动","每天","每12小时","每8小时","每4小时","每2小时","每小时","每30分钟","每20分钟","每10分钟"];
+function freqLabel(pos) { return FREQ_LBL[Math.round(Number(pos))] ?? FREQ_LBL[0]; }
+function hoursToFreqPos(h) {
+  if (!h || h <= 0) return 0;
+  let best = 1;
+  for (let i = 1; i < FREQ_H.length; i++) {
+    if (Math.abs(FREQ_H[i] - h) < Math.abs(FREQ_H[best] - h)) best = i;
+  }
+  return best;
 }
 function openCharDialog(c) {
   $("charDialogTitle").textContent = c ? "编辑角色" : "新建角色";
@@ -787,8 +796,8 @@ function openCharDialog(c) {
   $("cPersona").value = c?.persona_prompt || ""; $("cProvider").value = c?.provider || "deepseek";
   $("cModel").value = c?.model || ""; $("cKey").value = "";
   $("cDeep").checked = c ? c.deep_thinking !== 0 : true;
-  const freq = c?.checkin_interval_h ?? 8;
-  $("cFreq").value = freq; $("cFreqLabel").textContent = freqLabel(freq);
+  const pos = hoursToFreqPos(c?.checkin_interval_h ?? 24);
+  $("cFreq").value = pos; $("cFreqLabel").textContent = freqLabel(pos);
   $("cDelete").style.visibility = c ? "visible" : "hidden";
   $("charDialog").showModal();
 }
@@ -802,7 +811,7 @@ $("charForm").addEventListener("submit", async (e) => {
     id: $("cId").value || undefined, avatar_emoji: $("cEmoji").value || "🙂", name: $("cName").value.trim(),
     persona_prompt: $("cPersona").value, provider: $("cProvider").value, model: $("cModel").value.trim(),
     api_key_override: $("cKey").value.trim(), deep_thinking: $("cDeep").checked ? 1 : 0,
-    checkin_interval_h: Number($("cFreq").value),
+    checkin_interval_h: FREQ_H[Math.round(Number($("cFreq").value))] ?? 0,
   });
   $("charDialog").close(); await loadContacts();
 });

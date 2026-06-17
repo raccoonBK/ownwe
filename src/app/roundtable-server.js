@@ -505,6 +505,12 @@ class RoundtableServer {
         container: { type: "direct_chat", id: groupId, title: group.name },
         systemLabel: `进入群聊「${group.name}」。`,
       });
+      // Same stale-pending cleanup as single-char chat
+      draft.messages = (draft.messages || []).filter((m) => !(m.pending && !m.text));
+      if (!draft.messages.some((m) => m.pending)) {
+        draft.running = false;
+        draft.status = "ready";
+      }
       return draft;
     });
     // Update group's topic_id if new
@@ -1669,6 +1675,13 @@ class RoundtableServer {
         container: { type: "direct_chat", id: `ownwe-${character.id}`, title: character.name || "角色" },
         systemLabel: `进入与「${character.name || "角色"}」的单聊。`,
       });
+      // Clear stale pending messages left by an interrupted reply (e.g. user switched topics
+      // mid-generation). Without this the topic stays running=true forever and blocks all replies.
+      draft.messages = (draft.messages || []).filter((m) => !(m.pending && !m.text));
+      if (!draft.messages.some((m) => m.pending)) {
+        draft.running = false;
+        draft.status = "ready";
+      }
       return draft;
     });
     try {

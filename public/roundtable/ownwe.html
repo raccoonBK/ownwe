@@ -303,6 +303,11 @@
       <input type="range" class="freq-slider" id="cFreq" min="0" max="9" step="1" value="1">
       <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2);margin-top:3px"><span>← 从不</span><span>每10分钟 →</span></div>
     </label>
+    <label>
+      <span>群聊活跃度 — <span id="cActLabel" style="color:var(--accent)">普通</span></span>
+      <input type="range" class="freq-slider" id="cAct" min="0" max="4" step="1" value="2">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2);margin-top:3px"><span>← 很安静</span><span>非常活跃 →</span></div>
+    </label>
     <div class="modal-foot">
       <button type="button" class="btn danger" id="cDelete" style="visibility:hidden">删除</button>
       <div style="display:flex;gap:10px">
@@ -499,29 +504,13 @@ async function openGroupChat(groupId) {
   $("input").focus();
 }
 
-// ── Narration folding / dialogue extraction ──────────────────────────────────
-// If the AI wrapped dialogue in "..." (double quotes), extract only those parts
-// and show them clean — strip the surrounding narration entirely.
-// If no quotes found, fall back to collapsing （...） and *...* into a toggle.
+// ── Narration folding ─────────────────────────────────────────────────────
+// Collapse （action） and *action* blocks into a small ··· toggle;
+// everything else (actual spoken text) shows normally.
 const NARR_RE = /(（[^）\n]{1,300}）|\*[^*\n]{1,300}\*)/g;
-const QUOTE_RE = /"([^"\n]{1,500})"/g;
 
 function renderBubbleHtml(text) {
   if (!text) return "";
-
-  // Priority: extract text inside "..." and show only those parts (no quotes shown)
-  const quoted = [];
-  QUOTE_RE.lastIndex = 0;
-  let qm;
-  while ((qm = QUOTE_RE.exec(text)) !== null) {
-    const part = qm[1].trim();
-    if (part) quoted.push(part);
-  }
-  if (quoted.length) {
-    return esc(quoted.join("\n"));
-  }
-
-  // Fallback: collapse （action） and *action* into a small toggle
   let result = "", last = 0;
   NARR_RE.lastIndex = 0;
   let m;
@@ -808,6 +797,18 @@ function hoursToFreqPos(h) {
   }
   return best;
 }
+// Group activity slider: 5 steps mapping to probability thresholds
+const ACT_V   = [0, 0.2, 0.5, 0.8, 1.0];
+const ACT_LBL = ["很安静", "低调", "普通", "活跃", "非常活跃"];
+function actLabel(pos) { return ACT_LBL[Math.round(Number(pos))] ?? ACT_LBL[2]; }
+function actToPos(v) {
+  const val = typeof v === "number" ? v : 0.6;
+  let best = 2;
+  for (let i = 0; i < ACT_V.length; i++) {
+    if (Math.abs(ACT_V[i] - val) < Math.abs(ACT_V[best] - val)) best = i;
+  }
+  return best;
+}
 function openCharDialog(c) {
   $("charDialogTitle").textContent = c ? "编辑角色" : "新建角色";
   $("cId").value = c?.id || ""; $("cEmoji").value = c?.avatar_emoji || ""; $("cName").value = c?.name || "";
@@ -816,10 +817,13 @@ function openCharDialog(c) {
   $("cDeep").checked = c ? c.deep_thinking !== 0 : true;
   const pos = hoursToFreqPos(c?.checkin_interval_h ?? 24);
   $("cFreq").value = pos; $("cFreqLabel").textContent = freqLabel(pos);
+  const apos = actToPos(c?.group_activity ?? 0.6);
+  $("cAct").value = apos; $("cActLabel").textContent = actLabel(apos);
   $("cDelete").style.visibility = c ? "visible" : "hidden";
   $("charDialog").showModal();
 }
 $("cFreq").addEventListener("input", () => { $("cFreqLabel").textContent = freqLabel($("cFreq").value); });
+$("cAct").addEventListener("input", () => { $("cActLabel").textContent = actLabel($("cAct").value); });
 function editChar(id) { openCharDialog(characters.find((c) => c.id === id)); }
 $("addCharBtn").addEventListener("click", () => openCharDialog(null));
 $("cCancel").addEventListener("click", () => $("charDialog").close());
@@ -830,6 +834,7 @@ $("charForm").addEventListener("submit", async (e) => {
     persona_prompt: $("cPersona").value, provider: $("cProvider").value, model: $("cModel").value.trim(),
     api_key_override: $("cKey").value.trim(), deep_thinking: $("cDeep").checked ? 1 : 0,
     checkin_interval_h: FREQ_H[Math.round(Number($("cFreq").value))] ?? 0,
+    group_activity: ACT_V[Math.round(Number($("cAct").value))] ?? 0.6,
   });
   $("charDialog").close(); await loadContacts();
 });

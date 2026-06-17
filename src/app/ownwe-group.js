@@ -25,7 +25,7 @@ function loadMembers(dbPath, charIds) {
   for (const id of charIds) {
     try {
       const c = db.prepare(
-        "SELECT id, name, avatar_emoji, persona_prompt FROM ownwe_characters WHERE id = ?"
+        "SELECT id, name, avatar_emoji, persona_prompt, group_activity FROM ownwe_characters WHERE id = ?"
       ).get(id);
       if (c) out.push(c);
     } catch {
@@ -115,6 +115,11 @@ async function runGroupReplies({
     if (isStale()) return posted;
     const { member, forced, hop } = queue.shift();
     if ((spokenCount[member.id] || 0) >= 2) continue;
+
+    // Probabilistic activity gate: non-forced members may be skipped based on their
+    // group_activity level (0 = never speak, 1 = always considered). Default 0.6.
+    const activity = typeof member.group_activity === "number" ? member.group_activity : 0.6;
+    if (!forced && Math.random() > activity) continue;
 
     const others = members.filter((x) => x.id !== member.id);
     const { system, user } = buildDecisionPrompt({ member, others, transcript: runningTranscript, forced });

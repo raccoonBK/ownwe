@@ -521,16 +521,8 @@ class RoundtableServer {
         container: { type: "direct_chat", id: groupId, title: group.name },
         systemLabel: `进入群聊「${group.name}」。`,
       });
-      // Same stale cleanup as single-char chat: clear pending messages AND active runtimeRuns
-      draft.messages = (draft.messages || []).filter((m) => !(m.pending && !m.text));
-      if (Array.isArray(draft.runtimeRuns)) {
-        const ACTIVE = ["running", "waiting_approval", "checking_in"];
-        draft.runtimeRuns = draft.runtimeRuns.map((r) =>
-          ACTIVE.includes(r.status) ? { ...r, status: "interrupted", phase: "interrupted" } : r
-        );
-      }
-      draft.running = false;
-      draft.status = "ready";
+      // openOrCreateBoundTopic sets running=false. Group replies use isStale() to self-cancel
+      // when the topic changes, so no additional cleanup is needed here.
       return draft;
     });
     // Update group's topic_id if new
@@ -1700,18 +1692,9 @@ class RoundtableServer {
         container: { type: "direct_chat", id: `ownwe-${character.id}`, title: character.name || "角色" },
         systemLabel: `进入与「${character.name || "角色"}」的单聊。`,
       });
-      // Kill stale runtime state left by an interrupted reply.
-      // canStartTargetedReply blocks on BOTH latestPendingMessageForSpeaker AND
-      // latestActiveRuntimeRunForSpeaker, so we must clear both.
-      draft.messages = (draft.messages || []).filter((m) => !(m.pending && !m.text));
-      if (Array.isArray(draft.runtimeRuns)) {
-        const ACTIVE = ["running", "waiting_approval", "checking_in"];
-        draft.runtimeRuns = draft.runtimeRuns.map((r) =>
-          ACTIVE.includes(r.status) ? { ...r, status: "interrupted", phase: "interrupted" } : r
-        );
-      }
-      draft.running = false;
-      draft.status = "ready";
+      // openOrCreateBoundTopic already sets running=false when restoring a topic.
+      // Pending messages from an in-flight reply are intentionally left in place:
+      // they block canStartTargetedReply, and the background reply will resolve them.
       return draft;
     });
     try {
@@ -2890,16 +2873,26 @@ class RoundtableServer {
           },
         }));
       }
+      // Token mismatch means another topic was opened, BUT the reply should still land if
+      // the pending message still exists in a saved topic (background reply support).
       if (autoToken && this.autoRunToken !== autoToken) {
-        return;
+        const snapCheck = this.store.get();
+        if (!findMessageAnywhere(snapCheck, pendingMessageId)) {
+          this.clearPendingMessageTurnBindings(pendingMessageId);
+          return;
+        }
+        // Pending message lives in a saved topic — continue to write the result there.
       }
       const currentAfterRuntime = this.store.get();
+      // findRuntimeRun searches only active runtimeRuns; for background replies the run
+      // is in a saved topic's runtimeRuns, so null here is expected and non-fatal.
       const currentRun = findRuntimeRun(currentAfterRuntime.runtimeRuns, runtimeRunId);
       if (currentRun && !isRuntimeRunActive(currentRun) && currentRun.status === "interrupted") {
         this.clearPendingMessageTurnBindings(pendingMessageId);
         return;
       }
-      const currentMessage = findMessage(currentAfterRuntime, pendingMessageId);
+      // Search active AND saved topics for the pending message.
+      const currentMessage = findMessageAnywhere(currentAfterRuntime, pendingMessageId);
       if (!currentMessage) {
         this.clearPendingMessageTurnBindings(pendingMessageId);
         return;
@@ -2919,7 +2912,10 @@ class RoundtableServer {
         const voiceOnly = !isOtherworld && (speaker === "codex" || speaker === "claude") && hasVoicePrefix(rawDisplayText);
         const displayText = voiceOnly ? stripVoicePrefix(rawDisplayText) : rawDisplayText;
         isTtsMessage = voiceOnly;
-        upsertMessage(draft, {
+        // Write to whichever context (active draft or a saved topic) owns this message.
+        const ctx = resolveMessageContext(draft, pendingMessageId) || draft;
+        const isActiveTopic = ctx === draft;
+        upsertMessage(ctx, {
           id: pendingMessageId,
           speaker,
           text: displayText,
@@ -2927,24 +2923,26 @@ class RoundtableServer {
           pending: false,
           at: new Date().toISOString(),
         });
-        if (countRound) {
+        if (countRound && isActiveTopic) {
           if (speaker === "codex") {
             draft.nextSpeaker = "claude";
           } else if (speaker === "claude") {
             draft.nextSpeaker = "codex";
             draft.round += 1;
           }
-          // deepseek does not affect round rotation
         }
-        clearFreshRuntimeHandoff(draft, speaker);
-        markSpeakerSeenThroughLatestMessage(draft, speaker);
-        draft.runtimeRuns = finishRuntimeRun(draft.runtimeRuns, runtimeRunId, {
+        if (isActiveTopic) {
+          clearFreshRuntimeHandoff(draft, speaker);
+          markSpeakerSeenThroughLatestMessage(draft, speaker);
+        }
+        ctx.runtimeRuns = finishRuntimeRun(ctx.runtimeRuns || [], runtimeRunId, {
           status: "completed",
           phase: "completed",
         });
-        const keepLoopRunning = Boolean(keepRunning && (!countRound || draft.round < draft.maxRounds));
-        draft.running = Boolean(keepLoopRunning || hasActiveRuntimeRuns(draft.runtimeRuns));
-        draft.status = countRound && draft.round >= draft.maxRounds && !draft.running ? "complete" : "ready";
+        const keepLoopRunning = isActiveTopic && Boolean(keepRunning && (!countRound || draft.round < draft.maxRounds));
+        ctx.running = Boolean(keepLoopRunning || hasActiveRuntimeRuns(ctx.runtimeRuns));
+        ctx.status = countRound && isActiveTopic && draft.round >= draft.maxRounds && !ctx.running ? "complete" : "ready";
+        ctx.updatedAt = new Date().toISOString();
         draft.updatedAt = new Date().toISOString();
         return draft;
       });
@@ -2968,23 +2966,24 @@ class RoundtableServer {
       console.error(`[roundtable] ${speaker} turn failed: ${formatError(error)}`);
       this.clearPendingMessageTurnBindings(pendingMessageId);
       this.store.update((draft) => {
-        const currentRun = findRuntimeRun(draft.runtimeRuns, runtimeRunId);
+        const ctx = resolveMessageContext(draft, pendingMessageId) || draft;
+        const currentRun = findRuntimeRun(ctx.runtimeRuns || [], runtimeRunId);
         if (currentRun && !isRuntimeRunActive(currentRun) && currentRun.status === "interrupted") {
-          draft.pendingApprovals = clearPendingApprovalsForSpeaker(draft.pendingApprovals, speaker);
-          draft.running = hasActiveRuntimeRuns(draft.runtimeRuns);
-          draft.status = draft.running ? draft.status : "paused";
+          ctx.running = hasActiveRuntimeRuns(ctx.runtimeRuns);
+          ctx.status = ctx.running ? ctx.status : "paused";
+          if (ctx === draft) draft.pendingApprovals = clearPendingApprovalsForSpeaker(draft.pendingApprovals, speaker);
           return draft;
         }
-        finishPendingMessage(draft, pendingMessageId, formatError(error));
-        draft.pendingApprovals = clearPendingApprovalsForSpeaker(draft.pendingApprovals, speaker);
-        draft.runtimeRuns = finishRuntimeRun(draft.runtimeRuns, runtimeRunId, {
+        finishPendingMessage(ctx, pendingMessageId, formatError(error));
+        if (ctx === draft) draft.pendingApprovals = clearPendingApprovalsForSpeaker(draft.pendingApprovals, speaker);
+        ctx.runtimeRuns = finishRuntimeRun(ctx.runtimeRuns || [], runtimeRunId, {
           status: "failed",
           phase: "failed",
           detail: formatError(error),
         });
-        draft.running = hasActiveRuntimeRuns(draft.runtimeRuns);
-        draft.status = "error";
-        draft.lastError = formatError(error);
+        ctx.running = hasActiveRuntimeRuns(ctx.runtimeRuns);
+        ctx.status = "error";
+        if (ctx === draft) draft.lastError = formatError(error);
         return draft;
       });
       this.persistRuntimeRunStart(state.id, runtimeRunId, {
@@ -5389,6 +5388,26 @@ function finishPendingMessagesForSpeaker(draft, speaker, fallbackText = "") {
 function findMessage(draft, messageId) {
   const messages = Array.isArray(draft.messages) ? draft.messages : [];
   return messages.find((message) => message?.id === messageId) || null;
+}
+
+// Find a message in the active topic OR any saved topic (for background replies).
+function findMessageAnywhere(draft, messageId) {
+  const inActive = findMessage(draft, messageId);
+  if (inActive) return inActive;
+  for (const t of (Array.isArray(draft.topics) ? draft.topics : [])) {
+    const m = findMessage(t, messageId);
+    if (m) return m;
+  }
+  return null;
+}
+
+// Return the draft or saved-topic context that owns this message, null if not found.
+function resolveMessageContext(draft, messageId) {
+  if ((draft.messages || []).some((m) => m?.id === messageId)) return draft;
+  for (const t of (Array.isArray(draft.topics) ? draft.topics : [])) {
+    if ((t.messages || []).some((m) => m?.id === messageId)) return t;
+  }
+  return null;
 }
 
 function findRuntimeRun(runtimeRuns, runId) {

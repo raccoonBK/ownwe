@@ -71,12 +71,21 @@ function createApiAgentAdapter(config) {
   }
 
   async function sendTextTurn({ bindingKey, workspaceRoot, text, attachments = [], metadata = {}, model = "", allowCreateThread = true, onTurnStarted = null }) {
-    const provider = config.provider || "anthropic";
-    const apiKey = config.apiKey || "";
-    const resolvedModel = model || config.model || PROVIDER_CONFIGS[provider]?.defaultModel || "";
+    let provider = config.provider || "anthropic";
+    let apiKey = config.apiKey || "";
+    let resolvedModel = model || config.model || "";
+
+    // OwnWe: if a character is bound to this topic+speaker, use ITS provider/key/model.
+    const charOverride = resolveCharacterProvider(config.dbPath, bindingKey);
+    if (charOverride) {
+      provider = charOverride.provider;
+      apiKey = charOverride.apiKey;
+      if (charOverride.model) resolvedModel = charOverride.model;
+    }
+    if (!resolvedModel) resolvedModel = PROVIDER_CONFIGS[provider]?.defaultModel || "";
 
     if (!apiKey) {
-      throw new Error(`[api-agent] no API key configured for provider=${provider} speaker=${config.speakerId}`);
+      throw new Error(`[api-agent] no API key for provider=${provider} (角色没配 key，且环境里也没有对应的 ${provider.toUpperCase()}_API_KEY)`);
     }
 
     let threadId = sessionStore.getThreadIdForWorkspace(bindingKey, workspaceRoot);
@@ -107,7 +116,7 @@ function createApiAgentAdapter(config) {
       replyText = await callApi({
         provider,
         apiKey,
-        baseUrl: config.baseUrl || "",
+        baseUrl: charOverride ? "" : (config.baseUrl || ""),
         model: resolvedModel,
         messages: getHistory(threadId),
         systemPrompt: isFirstTurn ? systemPrompt : "",
@@ -303,6 +312,46 @@ function httpPost(url, body, headers, parseResponse) {
     req.write(body);
     req.end();
   });
+}
+
+// OwnWe: resolve the bound character's provider/key/model for this turn.
+// bindingKey looks like "roundtable:<topicId>:<speaker>" (or "roundtable:<speaker>").
+function resolveCharacterProvider(dbPath, bindingKey) {
+  try {
+    if (!dbPath || !bindingKey) return null;
+    const parts = String(bindingKey).split(":");
+    let topicId = "";
+    let speaker = "";
+    if (parts.length >= 3) { topicId = parts[1]; speaker = parts[2]; }
+    else return null;
+    if (!topicId || !speaker) return null;
+    const db = getDb(dbPath);
+    const binding = db.prepare(
+      "SELECT character_id FROM ownwe_character_bindings WHERE topic_id = ? AND speaker = ?"
+    ).get(topicId, speaker);
+    if (!binding?.character_id) return null;
+    const ch = db.prepare(
+      "SELECT provider, model, api_key_override FROM ownwe_characters WHERE id = ?"
+    ).get(binding.character_id);
+    if (!ch) return null;
+    const provider = ch.provider || "anthropic";
+    const apiKey = (ch.api_key_override && ch.api_key_override.trim()) || envKeyForProvider(provider);
+    if (!apiKey) return null;
+    return { provider, apiKey, model: (ch.model || "").trim() };
+  } catch {
+    return null;
+  }
+}
+
+function envKeyForProvider(provider) {
+  switch (provider) {
+    case "anthropic": return process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || "";
+    case "deepseek": return process.env.DEEPSEEK_API_KEY || "";
+    case "openai": return process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY || "";
+    case "gemini": return process.env.GEMINI_API_KEY || "";
+    case "kimi": return process.env.KIMI_API_KEY || "";
+    default: return "";
+  }
 }
 
 module.exports = { createApiAgentAdapter, PROVIDER_CONFIGS };

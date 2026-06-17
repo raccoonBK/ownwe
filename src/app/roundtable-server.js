@@ -36,6 +36,12 @@ const {
   profileToPrompt,
 } = require("./ownwe-profile");
 const {
+  listMoments,
+  createMoment,
+  toggleLike,
+  addComment,
+} = require("./ownwe-moments");
+const {
   RoundtableCheckinPoller,
   RoundtableCheckinStore,
   parseRoundtableCheckinResponse,
@@ -628,6 +634,10 @@ class RoundtableServer {
       this.sendJson(res, 200, getCharProfile(this.config.dbPath, charId));
       return;
     }
+    if (req.method === "GET" && requestUrl.pathname === "/api/ownwe/moments") {
+      this.sendJson(res, 200, listMoments(this.config.dbPath, {}));
+      return;
+    }
 
     if (req.method !== "POST") {
       this.sendJson(res, 405, { error: "method not allowed" });
@@ -863,6 +873,25 @@ class RoundtableServer {
         if (!character) { this.sendJson(res, 404, { error: "character not found" }); return; }
         this.openCharacterChat(character);
         this.sendJson(res, 200, this.snapshot());
+        return;
+      }
+      case "/api/ownwe/moments/post": {
+        const text = normalizeText(body.text);
+        if (!text) { this.sendJson(res, 400, { error: "text required" }); return; }
+        createMoment(this.config.dbPath, { authorType: "user", authorId: "self", text });
+        this.sendJson(res, 200, { ok: true });
+        return;
+      }
+      case "/api/ownwe/moments/like": {
+        const liked = toggleLike(this.config.dbPath, { momentId: Number(body.momentId), liker: "self" });
+        this.sendJson(res, 200, { ok: true, liked });
+        return;
+      }
+      case "/api/ownwe/moments/comment": {
+        const text = normalizeText(body.text);
+        if (!text || !body.momentId) { this.sendJson(res, 400, { error: "momentId and text required" }); return; }
+        addComment(this.config.dbPath, { momentId: Number(body.momentId), authorType: "user", authorId: "self", text });
+        this.sendJson(res, 200, { ok: true });
         return;
       }
       case "/api/ownwe/user-base/save": {

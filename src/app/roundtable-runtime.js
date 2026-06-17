@@ -450,8 +450,19 @@ function resolveAdapter(speakerId, runtimeConfig, globalConfig) {
   // Check for API mode config: e.g. CLAUDE_ADAPTER=api or CODEX_ADAPTER=api
   const upperSpeaker = speakerId.toUpperCase();
   const adapterMode = globalConfig[`${speakerId}Adapter`] || process.env[`${upperSpeaker}_ADAPTER`] || "";
-  const apiKey = globalConfig[`${speakerId}ApiKey`] || process.env[`${upperSpeaker}_API_KEY`] || "";
-  const provider = globalConfig[`${speakerId}Provider`] || process.env[`${upperSpeaker}_PROVIDER`] || (speakerId === "claude" ? "anthropic" : "openai");
+  let apiKey = globalConfig[`${speakerId}ApiKey`] || process.env[`${upperSpeaker}_API_KEY`] || "";
+  let provider = globalConfig[`${speakerId}Provider`] || process.env[`${upperSpeaker}_PROVIDER`] || (speakerId === "claude" ? "anthropic" : "openai");
+
+  // OwnWe: characters ride the 'claude' slot and supply their own provider/key per turn.
+  // So if there's no Claude key but ANY provider key exists, still create an API adapter
+  // (the per-character override decides the real provider at turn time).
+  if (speakerId === "claude" && !apiKey) {
+    const fallback = pickAnyProviderKey();
+    if (fallback) {
+      provider = fallback.provider;
+      apiKey = fallback.apiKey;
+    }
+  }
 
   // Auto-detect: use API adapter when key is set and no CLI is configured / CLI mode not forced
   const useApi = adapterMode === "api" || (apiKey && adapterMode !== "cli");
@@ -472,6 +483,20 @@ function resolveAdapter(speakerId, runtimeConfig, globalConfig) {
     return createClaudeCodeRuntimeAdapter({ ...runtimeConfig, runtime: "claudecode" });
   }
   return createCodexRuntimeAdapter({ ...runtimeConfig, runtime: "codex" });
+}
+
+// Find any configured provider key in the environment (OwnWe fallback for the claude slot).
+function pickAnyProviderKey() {
+  if (process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY) {
+    return { provider: "anthropic", apiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY };
+  }
+  if (process.env.DEEPSEEK_API_KEY) return { provider: "deepseek", apiKey: process.env.DEEPSEEK_API_KEY };
+  if (process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY) {
+    return { provider: "openai", apiKey: process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY };
+  }
+  if (process.env.GEMINI_API_KEY) return { provider: "gemini", apiKey: process.env.GEMINI_API_KEY };
+  if (process.env.KIMI_API_KEY) return { provider: "kimi", apiKey: process.env.KIMI_API_KEY };
+  return null;
 }
 
 module.exports = {

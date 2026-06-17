@@ -25,9 +25,9 @@ function loadMembers(dbPath, charIds) {
   for (const id of charIds) {
     try {
       const c = db.prepare(
-        "SELECT id, name, codename, gender, avatar_emoji, persona_prompt, group_activity FROM ownwe_characters WHERE id = ?"
+        "SELECT id, name, codename, gender, avatar_emoji, persona_prompt, group_activity, muted, sleep_start, sleep_end FROM ownwe_characters WHERE id = ?"
       ).get(id);
-      if (c) out.push(c);
+      if (c && !c.muted) out.push(c); // 禁言 members don't participate in group chat
     } catch {
       // skip missing
     }

@@ -77,9 +77,13 @@ function upsertCharacter(dbPath, char) {
   const deepThinking = char.deep_thinking === undefined ? 1 : (char.deep_thinking ? 1 : 0);
   const checkinIntervalH = char.checkin_interval_h === undefined ? 8 : Number(char.checkin_interval_h);
   const groupActivity = char.group_activity === undefined ? 0.6 : Number(char.group_activity);
+  const muted = char.muted ? 1 : 0;
+  const sleepStart = char.sleep_start === undefined || char.sleep_start === null || char.sleep_start === "" ? -1 : Math.trunc(Number(char.sleep_start));
+  const sleepEnd = char.sleep_end === undefined || char.sleep_end === null || char.sleep_end === "" ? -1 : Math.trunc(Number(char.sleep_end));
+  const momentIntervalH = char.moment_interval_h === undefined ? 6 : Number(char.moment_interval_h);
   getDb(dbPath).prepare(`
-    INSERT INTO ownwe_characters (id, name, codename, gender, persona_prompt, provider, model, api_key_override, mode_bias, avatar_emoji, sort_order, deep_thinking, checkin_interval_h, group_activity, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO ownwe_characters (id, name, codename, gender, persona_prompt, provider, model, api_key_override, mode_bias, avatar_emoji, sort_order, deep_thinking, checkin_interval_h, group_activity, muted, sleep_start, sleep_end, moment_interval_h, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       codename = excluded.codename,
@@ -94,6 +98,10 @@ function upsertCharacter(dbPath, char) {
       deep_thinking = excluded.deep_thinking,
       checkin_interval_h = excluded.checkin_interval_h,
       group_activity = excluded.group_activity,
+      muted = excluded.muted,
+      sleep_start = excluded.sleep_start,
+      sleep_end = excluded.sleep_end,
+      moment_interval_h = excluded.moment_interval_h,
       updated_at = excluded.updated_at
   `).run(
     id,
@@ -110,6 +118,10 @@ function upsertCharacter(dbPath, char) {
     deepThinking,
     checkinIntervalH,
     groupActivity,
+    muted,
+    sleepStart,
+    sleepEnd,
+    momentIntervalH,
     now,
     now,
   );
@@ -194,6 +206,34 @@ function getRelationshipState(dbPath, charId, { persist = true } = {}) {
   }
 }
 
+// Is the given character within its configured quiet/sleep hours right now?
+// sleepStart/sleepEnd are hours 0-23 in Asia/Shanghai; -1 disables. Wraps midnight.
+function isInSleepHours(sleepStart, sleepEnd, now = new Date()) {
+  const s = Number(sleepStart), e = Number(sleepEnd);
+  if (!Number.isInteger(s) || !Number.isInteger(e) || s < 0 || e < 0 || s === e) return false;
+  const h = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Shanghai" })).getHours();
+  // Non-wrapping window e.g. 1-6: s <= h < e. Wrapping window e.g. 23-6: h >= s || h < e.
+  return s < e ? (h >= s && h < e) : (h >= s || h < e);
+}
+
+// A proactive message went unanswered. Raise tension a little (hidden from user),
+// scaled by how many were ignored in a row. Also nudges security down slightly.
+function recordIgnoredCheckin(dbPath, charId, streak = 1) {
+  try {
+    const db = getDb(dbPath);
+    const row = ensureRelationshipRow(dbPath, charId);
+    if (!row) return;
+    const bump = Math.min(0.3, 0.07 * Math.max(1, streak));
+    const tension = Math.max(0, Math.min(TENSION_CAP, (row.tension || 0) + bump));
+    const security = Math.max(0.2, (row.security || 0.7) - 0.015 * Math.max(1, streak));
+    db.prepare(
+      "UPDATE char_relationship_state SET tension = ?, security = ?, ignored_streak = ?, updated_at = ? WHERE char_id = ?"
+    ).run(tension, security, Math.max(1, streak), new Date().toISOString(), charId);
+  } catch {
+    // best effort
+  }
+}
+
 // Called after the user interacts *with* this character: repair + bond growth.
 function recordInteraction(dbPath, charId) {
   try {
@@ -205,7 +245,7 @@ function recordInteraction(dbPath, charId) {
     const attachment = Math.min(ATTACHMENT_CAP, row.attachment + ATTACHMENT_GROWTH);
     db.prepare(`
       UPDATE char_relationship_state
-      SET tension = ?, attachment = ?, last_interaction_at = ?, updated_at = ?
+      SET tension = ?, attachment = ?, ignored_streak = 0, last_interaction_at = ?, updated_at = ?
       WHERE char_id = ?
     `).run(tension, attachment, nowIso, nowIso, charId);
   } catch {
@@ -443,4 +483,6 @@ module.exports = {
   extractMemoriesFromTurn,
   getRelationshipState,
   recordInteraction,
+  recordIgnoredCheckin,
+  isInSleepHours,
 };

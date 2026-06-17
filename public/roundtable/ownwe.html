@@ -318,6 +318,25 @@
       <input type="range" class="freq-slider" id="cAct" min="0" max="4" step="1" value="2">
       <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2);margin-top:3px"><span>← 很安静</span><span>非常活跃 →</span></div>
     </label>
+    <label>
+      <span>发朋友圈频率 — <span id="cMomLabel" style="color:var(--accent)">每6小时</span></span>
+      <input type="range" class="freq-slider" id="cMom" min="0" max="6" step="1" value="3">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2);margin-top:3px"><span>← 从不</span><span>每2小时 →</span></div>
+    </label>
+    <div class="modal-row" style="align-items:flex-end">
+      <label class="grow"><span>睡眠时间（这段时间不主动）</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input id="cSleepStart" type="number" min="0" max="23" placeholder="23" style="width:64px;text-align:center">
+          <span style="color:var(--ink-2)">点 —</span>
+          <input id="cSleepEnd" type="number" min="0" max="23" placeholder="6" style="width:64px;text-align:center">
+          <span style="color:var(--ink-2)">点（留空＝不设）</span>
+        </div>
+      </label>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;flex-direction:row">
+      <input type="checkbox" id="cMuted" style="width:auto">
+      <span style="margin:0">禁言（不再主动找你、不在群里说话、不发朋友圈；单聊仍可回复）</span>
+    </label>
     <div class="modal-foot">
       <button type="button" class="btn danger" id="cDelete" style="visibility:hidden">删除</button>
       <div style="display:flex;gap:10px">
@@ -444,7 +463,7 @@ async function loadContacts() {
   }
   const all = [
     ...groups.map((g) => renderContactRow({ id: g.id, name: g.name, emoji: g.avatarEmoji || g.avatar_emoji || "👥", sub: `群聊 · ${(g.charIds || g.char_ids_parsed || []).length} 人`, isGroup: true })),
-    ...characters.map((c) => renderContactRow({ id: c.id, name: c.name, emoji: c.avatar_emoji || "🙂", sub: c.codename ? `代号「${c.codename}」· ${provLabel(c.provider)}` : provLabel(c.provider), isGroup: false })),
+    ...characters.map((c) => renderContactRow({ id: c.id, name: (c.muted ? "🔇 " : "") + c.name, emoji: c.avatar_emoji || "🙂", sub: c.codename ? `代号「${c.codename}」· ${provLabel(c.provider)}` : provLabel(c.provider), isGroup: false })),
   ];
   box.innerHTML = all.join("");
   box.querySelectorAll(".contact").forEach((el) => {
@@ -819,6 +838,18 @@ function actToPos(v) {
   }
   return best;
 }
+// Moment-posting frequency: 0=never, then daily → every 2h
+const MOM_H   = [0, 24, 12, 6, 4, 3, 2];
+const MOM_LBL = ["从不发", "每天", "每12小时", "每6小时", "每4小时", "每3小时", "每2小时"];
+function momLabel(pos) { return MOM_LBL[Math.round(Number(pos))] ?? MOM_LBL[3]; }
+function momToPos(h) {
+  if (!h || h <= 0) return 0;
+  let best = 3;
+  for (let i = 1; i < MOM_H.length; i++) {
+    if (Math.abs(MOM_H[i] - h) < Math.abs(MOM_H[best] - h)) best = i;
+  }
+  return best;
+}
 function openCharDialog(c) {
   $("charDialogTitle").textContent = c ? "编辑角色" : "新建角色";
   $("cId").value = c?.id || ""; $("cEmoji").value = c?.avatar_emoji || ""; $("cName").value = c?.name || "";
@@ -830,11 +861,17 @@ function openCharDialog(c) {
   $("cFreq").value = pos; $("cFreqLabel").textContent = freqLabel(pos);
   const apos = actToPos(c?.group_activity ?? 0.6);
   $("cAct").value = apos; $("cActLabel").textContent = actLabel(apos);
+  const mpos = momToPos(c?.moment_interval_h ?? 6);
+  $("cMom").value = mpos; $("cMomLabel").textContent = momLabel(mpos);
+  $("cMuted").checked = c ? !!c.muted : false;
+  $("cSleepStart").value = (c && c.sleep_start >= 0) ? c.sleep_start : "";
+  $("cSleepEnd").value = (c && c.sleep_end >= 0) ? c.sleep_end : "";
   $("cDelete").style.visibility = c ? "visible" : "hidden";
   $("charDialog").showModal();
 }
 $("cFreq").addEventListener("input", () => { $("cFreqLabel").textContent = freqLabel($("cFreq").value); });
 $("cAct").addEventListener("input", () => { $("cActLabel").textContent = actLabel($("cAct").value); });
+$("cMom").addEventListener("input", () => { $("cMomLabel").textContent = momLabel($("cMom").value); });
 function editChar(id) { openCharDialog(characters.find((c) => c.id === id)); }
 $("addCharBtn").addEventListener("click", () => openCharDialog(null));
 $("cCancel").addEventListener("click", () => $("charDialog").close());
@@ -847,6 +884,10 @@ $("charForm").addEventListener("submit", async (e) => {
     api_key_override: $("cKey").value.trim(), deep_thinking: $("cDeep").checked ? 1 : 0,
     checkin_interval_h: FREQ_H[Math.round(Number($("cFreq").value))] ?? 0,
     group_activity: ACT_V[Math.round(Number($("cAct").value))] ?? 0.6,
+    moment_interval_h: MOM_H[Math.round(Number($("cMom").value))] ?? 6,
+    muted: $("cMuted").checked ? 1 : 0,
+    sleep_start: $("cSleepStart").value === "" ? -1 : Number($("cSleepStart").value),
+    sleep_end: $("cSleepEnd").value === "" ? -1 : Number($("cSleepEnd").value),
   });
   $("charDialog").close(); await loadContacts();
 });

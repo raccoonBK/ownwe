@@ -23,6 +23,7 @@ const {
   extractMemoriesFromTurn,
   getRelationshipState,
   recordInteraction,
+  isInSleepHours,
 } = require("./ownwe-context");
 const {
   EXTRACT_EVERY,
@@ -2444,8 +2445,13 @@ class RoundtableServer {
 
         const members = loadGroupMembers(this.config.dbPath, group.charIds);
         if (members.length < 2) continue;
+        // Awake, non-muted members are eligible to start (loadGroupMembers already drops muted).
+        const awake = force
+          ? members
+          : members.filter((m) => !isInSleepHours(m.sleep_start, m.sleep_end));
+        if (awake.length < 1) continue;
         // Pick a starter weighted by group_activity (quiet chars rarely initiate).
-        const weighted = members.map((m) => ({
+        const weighted = awake.map((m) => ({
           m, w: Math.max(0.05, typeof m.group_activity === "number" ? m.group_activity : 0.6),
         }));
         const total = weighted.reduce((s, x) => s + x.w, 0);

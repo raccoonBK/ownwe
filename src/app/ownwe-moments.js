@@ -2,7 +2,7 @@
 // Authors are either the user ('self') or a character.
 
 const { getDb } = require("../db/connection");
-const { writeMemory } = require("./ownwe-context");
+const { writeMemory, isInSleepHours } = require("./ownwe-context");
 const { generateCharacterReply } = require("../adapters/api/api-agent-adapter");
 
 // 朋友圈也发生在手机屏幕上 — 评论里不该出现线下动作。
@@ -138,14 +138,23 @@ function listBlockedCharIds(dbPath) {
 
 // Each character independently decides whether to like/comment.
 // excludeCharId: skip this character — prevents self-commenting on own posts.
+// authorCharId: when set, the moment was posted by THAT character (not the user),
+//   so commenters address them by codename rather than assuming it's the user's post.
 // Each character uses their own configured model (not a shared global API).
-async function reactToMoment(dbPath, momentId, text, { excludeCharId = null } = {}) {
+async function reactToMoment(dbPath, momentId, text, { excludeCharId = null, authorCharId = null } = {}) {
   let chars = [];
+  let authorHandle = "";
   try {
     const all = getDb(dbPath).prepare(
-      "SELECT id, name, codename, persona_prompt FROM ownwe_characters ORDER BY sort_order ASC LIMIT 6"
+      "SELECT id, name, codename, persona_prompt, muted FROM ownwe_characters ORDER BY sort_order ASC LIMIT 6"
     ).all();
-    chars = excludeCharId ? all.filter((c) => c.id !== excludeCharId) : all;
+    if (authorCharId) {
+      const a = all.find((c) => c.id === authorCharId);
+      authorHandle = a ? (a.codename || a.name) : "某位";
+    }
+    chars = all
+      .filter((c) => !c.muted)                                   // 禁言 chars don't react
+      .filter((c) => (excludeCharId ? c.id !== excludeCharId : true));
   } catch {
     return;
   }
@@ -153,9 +162,12 @@ async function reactToMoment(dbPath, momentId, text, { excludeCharId = null } = 
   for (const ch of chars) {
     try {
       const persona = (ch.persona_prompt || "").slice(0, 1200);
+      const whoPosted = authorCharId
+        ? `群里的「${authorHandle}」刚发了一条朋友圈。你看到了。（不是用户发的）`
+        : "你的朋友（用户）刚发了一条朋友圈。你看到了。";
       const systemPrompt = [
         persona ? `你的人设：\n${persona}` : `你是「${ch.name}」。`,
-        "你的朋友（用户）刚发了一条朋友圈。你看到了。",
+        whoPosted,
         "按你的人设、你和TA的关系，真实地决定要不要点赞、要不要评论。",
         "大多数时候普通的动态你可能只点个赞或什么都不做——别每条都长篇大论，那样很假。",
         "评论要短、像真人随口说的、是你自己的语气。绝不要引用「我记得/根据资料」之类，把了解演成自然。",
@@ -220,7 +232,7 @@ async function maybeCharacterPostMoments(dbPath, { force = false } = {}) {
   let chars = [];
   try {
     chars = getDb(dbPath).prepare(
-      "SELECT id, name, persona_prompt, last_moment_at FROM ownwe_characters"
+      "SELECT id, name, persona_prompt, last_moment_at, muted, sleep_start, sleep_end, moment_interval_h FROM ownwe_characters"
     ).all();
   } catch {
     return 0;
@@ -229,9 +241,14 @@ async function maybeCharacterPostMoments(dbPath, { force = false } = {}) {
   let posted = 0;
   for (const ch of chars) {
     try {
+      if (ch.muted) continue;                                    // 禁言：no autonomous posting
       if (!force) {
+        // Per-character posting cadence (moment_interval_h); 0 = never posts.
+        const intervalH = ch.moment_interval_h === undefined ? CHAR_MOMENT_MIN_GAP_H : Number(ch.moment_interval_h);
+        if (intervalH <= 0) continue;
+        if (isInSleepHours(ch.sleep_start, ch.sleep_end)) continue; // asleep — don't post
         const gapH = hoursSince(ch.last_moment_at);
-        if (gapH < CHAR_MOMENT_MIN_GAP_H) continue;
+        if (gapH < intervalH) continue;
         if (Math.random() > CHAR_MOMENT_PROB) continue;
       }
 
@@ -255,8 +272,9 @@ async function maybeCharacterPostMoments(dbPath, { force = false } = {}) {
       } catch {}
       posted += 1;
 
-      // Other characters react — the author is excluded to prevent self-commenting
-      reactToMoment(dbPath, info.lastInsertRowid, text, { excludeCharId: ch.id }).catch(() => {});
+      // Other characters react — the author is excluded to prevent self-commenting,
+      // and identified so commenters know it's a character's post (not the user's).
+      reactToMoment(dbPath, info.lastInsertRowid, text, { excludeCharId: ch.id, authorCharId: ch.id }).catch(() => {});
     } catch {
       // best effort per character
     }

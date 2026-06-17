@@ -13,20 +13,28 @@ const MOMENT_CHANNEL_RULE =
 // 写进其他角色的记忆 —— 于是 A 能记得 "B 在我朋友圈下说过什么"（跨角色见证）。
 function recordMomentObservation(dbPath, { momentText, actorId, actorName, commentText }) {
   if (!actorId || !commentText) return;
+  const snippet = String(momentText || "").slice(0, 30);
+  const cSnippet = String(commentText).slice(0, 50);
+
+  // Write to other characters: "we saw B comment on the feed"
   let others = [];
   try {
     others = getDb(dbPath).prepare("SELECT id FROM ownwe_characters WHERE id != ?").all(actorId);
   } catch {
     return;
   }
-  const content = `（朋友圈里看到的）在「${String(momentText || "").slice(0, 30)}」这条下面，${actorName}回了一句：「${String(commentText).slice(0, 50)}」`;
+  const othersContent = `（朋友圈里看到的）在「${snippet}」这条下面，${actorName}回了一句：「${cSnippet}」`;
   for (const o of others) {
     try {
-      writeMemory(dbPath, { charId: o.id, content, context: "moments", valence: 0.5, keywords: [] });
-    } catch {
-      // best effort
-    }
+      writeMemory(dbPath, { charId: o.id, content: othersContent, context: "moments", valence: 0.5, keywords: [] });
+    } catch {}
   }
+
+  // Write to the actor themselves: "I commented on this post"
+  const selfContent = `（朋友圈）我在「${snippet}」下回了：「${cSnippet}」`;
+  try {
+    writeMemory(dbPath, { charId: actorId, content: selfContent, context: "moments", valence: 0.5, keywords: [] });
+  } catch {}
 }
 
 // ── Read ─────────────────────────────────────────────────────────────────────
@@ -237,6 +245,14 @@ async function maybeCharacterPostMoments(dbPath, { force = false } = {}) {
       db.prepare(
         "UPDATE ownwe_characters SET last_moment_at = datetime('now') WHERE id = ?"
       ).run(ch.id);
+      // Write self-memory: the character knows what they just posted
+      try {
+        writeMemory(dbPath, {
+          charId: ch.id,
+          content: `（朋友圈）我发了一条：「${String(text).slice(0, 80)}」`,
+          context: "moments", valence: 0.6, keywords: [],
+        });
+      } catch {}
       posted += 1;
 
       // Other characters react — the author is excluded to prevent self-commenting

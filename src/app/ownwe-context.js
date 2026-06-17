@@ -228,9 +228,47 @@ function tensionRegisterNote(relationshipState, mode) {
   return "";
 }
 
+// ── Recent moments snapshot ────────────────────────────────────────────────────
+// Builds a short text block of the latest moments + comments so every character
+// "sees" the shared feed regardless of which surface they're currently on.
+function readRecentMomentsContext(dbPath, charId, { limit = 6 } = {}) {
+  try {
+    const db = getDb(dbPath);
+    const charNames = Object.fromEntries(
+      db.prepare("SELECT id, name FROM ownwe_characters").all().map((c) => [c.id, c.name])
+    );
+    const moments = db.prepare(
+      "SELECT id, text, author_type, author_id FROM ownwe_moments ORDER BY id DESC LIMIT ?"
+    ).all(limit).reverse(); // oldest first so narrative reads top-to-bottom
+
+    if (!moments.length) return "";
+
+    const lines = [];
+    for (const m of moments) {
+      const poster = m.author_type === "user"
+        ? "用户"
+        : (m.author_id === charId ? "我" : (charNames[m.author_id] || "角色"));
+      lines.push(`• ${poster} 发圈：${String(m.text || "").slice(0, 80)}`);
+
+      const comments = db.prepare(
+        "SELECT text, author_type, author_id FROM ownwe_moment_comments WHERE moment_id = ? ORDER BY id ASC LIMIT 6"
+      ).all(m.id);
+      for (const c of comments) {
+        const who = c.author_type === "user"
+          ? "用户"
+          : (c.author_id === charId ? "我" : (charNames[c.author_id] || "角色"));
+        lines.push(`  └ ${who}：${String(c.text || "").slice(0, 60)}`);
+      }
+    }
+    return lines.join("\n");
+  } catch {
+    return "";
+  }
+}
+
 // ── Context builder ────────────────────────────────────────────────────────────
 
-function buildOwnWeContext({ character, memories = [], transcript = "", mode = "B", relationshipState = null, profileBlock = "" }) {
+function buildOwnWeContext({ character, memories = [], transcript = "", mode = "B", relationshipState = null, profileBlock = "", momentsBlock = "" }) {
   let frame = "";
   try {
     frame = fs.readFileSync(FRAME_TEMPLATE, "utf8");
@@ -261,19 +299,24 @@ function buildOwnWeContext({ character, memories = [], transcript = "", mode = "
     .filter(Boolean)
     .join("\n\n");
 
-  return frame
-    .replace("{{PERSONA_PROMPT}}", personaWithProfile)
-    .replace("{{CURRENT_TIME}}", currentTime)
-    .replace(/{{#if MEMORY_BLOCK}}[\s\S]*?{{\/if}}/g, memoryBlock
-      ? frame.match(/{{#if MEMORY_BLOCK}}([\s\S]*?){{\/if}}/)?.[1]
-          ?.replace("{{MEMORY_BLOCK}}", memoryBlock) || memoryBlock
-      : "")
-    .replace(/{{#if RELATIONSHIP_BLOCK}}[\s\S]*?{{\/if}}/g, relationshipBlock
-      ? frame.match(/{{#if RELATIONSHIP_BLOCK}}([\s\S]*?){{\/if}}/)?.[1]
-          ?.replace("{{RELATIONSHIP_BLOCK}}", relationshipBlock) || ""
-      : "")
-    .replace("{{TRANSCRIPT}}", transcript || "（暂无对话记录）")
-    .trim();
+  function fillConditional(tpl, key, value) {
+    return tpl.replace(
+      new RegExp(`{{#if ${key}}}([\\s\\S]*?){{/if}}`, "g"),
+      value
+        ? (tpl.match(new RegExp(`{{#if ${key}}}([\\s\\S]*?){{/if}}`))?.[1] || "")
+            .replace(`{{${key}}}`, value)
+        : ""
+    );
+  }
+
+  let result = frame;
+  result = result.replace("{{PERSONA_PROMPT}}", personaWithProfile);
+  result = result.replace("{{CURRENT_TIME}}", currentTime);
+  result = fillConditional(result, "MEMORY_BLOCK", memoryBlock);
+  result = fillConditional(result, "RELATIONSHIP_BLOCK", relationshipBlock);
+  result = fillConditional(result, "MOMENTS_BLOCK", momentsBlock);
+  result = result.replace("{{TRANSCRIPT}}", transcript || "（暂无对话记录）");
+  return result.trim();
 }
 
 // Build a natural time-awareness note: time of day + gap since last talk.
@@ -363,6 +406,7 @@ function extractKeywords(text) {
 
 module.exports = {
   buildOwnWeContext,
+  readRecentMomentsContext,
   listCharacters,
   getCharacter,
   upsertCharacter,

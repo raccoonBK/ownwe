@@ -29,6 +29,11 @@
 **当前状态**：{{RELATIONSHIP_BLOCK}}
 {{/if}}
 
+{{#if MOMENTS_BLOCK}}
+**朋友圈近况**（你平时刷到的，自然知道就好，不要直接报账）：
+{{MOMENTS_BLOCK}}
+{{/if}}
+
 ---
 
 **近期对话**：

@@ -14,6 +14,7 @@ const { readConfig } = require("../core/config");
 const { classify } = require("./ownwe-classifier");
 const {
   buildOwnWeContext,
+  readRecentMomentsContext,
   listCharacters,
   getCharacter,
   upsertCharacter,
@@ -3649,7 +3650,9 @@ function buildRuntimePrompt({ speaker, state, stateDir = "", dbPath = "", ownweM
           } catch {
             profileBlock = "";
           }
-          return buildOwnWeContext({ character, memories, transcript, mode: ownweMode, relationshipState, profileBlock });
+          // 朋友圈快照：让角色在单聊里也能"看到"朋友圈的最新动态
+          const momentsBlock = readRecentMomentsContext(dbPath, character.id, { limit: 6 });
+          return buildOwnWeContext({ character, memories, transcript, mode: ownweMode, relationshipState, profileBlock, momentsBlock });
         }
       }
     } catch (err) {

@@ -290,26 +290,33 @@
         <header class="paper-head">
           <p>User Profile</p>
           <h2>用户百科</h2>
-          <span>启动核心卡 + 按需检索。现在先放占位示例。</span>
+          <span>客观信息所有角色共享，可随时修改。下面「各角色心中的我」是每个角色基于相处自己形成的理解，各不相同。</span>
         </header>
 
-        <div class="user-card">
-          <div class="user-row">
-            <span>语言习惯</span>
-            <p>中文为主，偶尔夹英文。喜欢直接、自然，不要模板和空泛铺垫。</p>
+        <!-- Objective layer — shared, editable -->
+        <form id="userBaseForm" class="user-base-form">
+          <div class="user-base-grid">
+            <label><span>年龄</span><input id="ubAge" type="text" autocomplete="off" placeholder="如 24"></label>
+            <label><span>性别</span><input id="ubGender" type="text" autocomplete="off" placeholder="如 女"></label>
+            <label><span>MBTI</span><input id="ubMbti" type="text" autocomplete="off" placeholder="如 INFJ"></label>
+            <label><span>城市</span><input id="ubCity" type="text" autocomplete="off" placeholder="如 上海"></label>
+            <label><span>专业</span><input id="ubMajor" type="text" autocomplete="off" placeholder="如 心理学"></label>
+            <label><span>年级 / 阶段</span><input id="ubGrade" type="text" autocomplete="off" placeholder="如 研一 / 在职"></label>
+            <label class="user-base-wide"><span>行业（逗号分隔）</span><input id="ubIndustries" type="text" autocomplete="off" placeholder="如 互联网, 教育"></label>
           </div>
-          <div class="user-row">
-            <span>工作方式</span>
-            <p>先做大结构，再处理微调。需要可执行文件、方案和明确下一步。</p>
+          <div class="user-base-actions">
+            <button type="submit" class="button primary">保存基本信息</button>
+            <span id="userBaseSaved" class="user-base-saved" hidden>已保存 ✓</span>
           </div>
-          <div class="user-row">
-            <span>审美倾向</span>
-            <p>浅纸感、留白、雾蓝灰、少量赭红；不要大面积绿，不要后台感。</p>
-          </div>
-          <div class="user-row">
-            <span>当前阶段</span>
-            <p>圆桌前端美化、上下文结构和存放区规划中。</p>
-          </div>
+        </form>
+
+        <!-- Subjective layer — per character -->
+        <div class="char-profiles-head">
+          <h3>各角色心中的我</h3>
+          <small>点开看每个角色对你的理解，可手动增删</small>
+        </div>
+        <div id="charProfilesList" class="char-profiles-list">
+          <p class="empty-hint">还没有角色，或角色还没和你聊够。先去「角色」建一个并绑定话题。</p>
         </div>
       </section>
 
@@ -813,6 +820,21 @@
       </form>
     </dialog>
 
+    <!-- OwnWe Profile Dialog (this character's picture of the user) -->
+    <dialog id="profileDialog" class="character-dialog">
+      <div class="character-form">
+        <header>
+          <h3 id="profileDialogTitle">画像</h3>
+          <button id="profileDialogClose" type="button" aria-label="关闭">✕</button>
+        </header>
+        <p class="empty-hint" style="margin:0">这是该角色对你的理解（它凭相处自己形成的，可能和别的角色不一样）。可手动增删，点 × 删除单项。</p>
+        <div id="profileBody"></div>
+        <footer>
+          <button id="profileCloseBtn" type="button" class="button">关闭</button>
+        </footer>
+      </div>
+    </dialog>
+
     <dialog id="summaryEditDialog" class="summary-edit-dialog">
       <form id="summaryEditForm" method="dialog" class="summary-edit-form">
         <input id="summaryEditId" type="hidden">
@@ -1089,6 +1111,157 @@
         }
         applyThemeIcon();
       });
+
+      // ── 用户百科 (objective layer) + per-character profiles ──────────────────
+      document.querySelector('[data-view="user"]')?.addEventListener("click", () => {
+        loadUserBase();
+        loadCharProfiles();
+      });
+
+      async function loadUserBase() {
+        try {
+          const res = await fetch("/api/ownwe/user-base");
+          const b = await res.json();
+          $("ubAge").value = b.age || "";
+          $("ubGender").value = b.gender || "";
+          $("ubMbti").value = b.mbti || "";
+          $("ubCity").value = b.city || "";
+          $("ubMajor").value = b.major || "";
+          $("ubGrade").value = b.grade || "";
+          $("ubIndustries").value = (b.industries || []).join(", ");
+        } catch (e) { console.error("[ownwe] load user-base failed", e); }
+      }
+
+      $("userBaseForm")?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const payload = {
+          age: $("ubAge").value.trim(),
+          gender: $("ubGender").value.trim(),
+          mbti: $("ubMbti").value.trim(),
+          city: $("ubCity").value.trim(),
+          major: $("ubMajor").value.trim(),
+          grade: $("ubGrade").value.trim(),
+          industries: $("ubIndustries").value.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
+        };
+        try {
+          await fetch("/api/ownwe/user-base/save", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+          });
+          const saved = $("userBaseSaved");
+          if (saved) { saved.hidden = false; setTimeout(() => { saved.hidden = true; }, 1500); }
+        } catch (err) { alert("保存失败：" + err.message); }
+      });
+
+      async function loadCharProfiles() {
+        const list = $("charProfilesList");
+        if (!list) return;
+        try {
+          const chars = await (await fetch("/api/ownwe/characters")).json();
+          if (!chars.length) {
+            list.innerHTML = '<p class="empty-hint">还没有角色。先去「角色」建一个并绑定话题。</p>';
+            return;
+          }
+          list.innerHTML = chars.map((c) => `
+            <div class="char-profile-card">
+              <span class="char-avatar">${c.avatar_emoji || "🤖"}</span>
+              <div class="char-info"><strong>${escHtml(c.name)}</strong><small>心中的你</small></div>
+              <button type="button" class="btn-sm view-profile-btn" data-id="${c.id}" data-name="${escHtml(c.name)}">查看 / 编辑</button>
+            </div>
+          `).join("");
+          list.querySelectorAll(".view-profile-btn").forEach((btn) => {
+            btn.addEventListener("click", () => openProfileDialog(btn.dataset.id, btn.dataset.name));
+          });
+        } catch (e) {
+          console.error("[ownwe] load char profiles failed", e);
+        }
+      }
+
+      // ── Profile dialog ─────────────────────────────────────────────────────
+      let currentProfile = null;
+      let currentProfileCharId = null;
+
+      async function openProfileDialog(charId, name) {
+        currentProfileCharId = charId;
+        $("profileDialogTitle").textContent = `${name} 心中的你`;
+        try {
+          currentProfile = await (await fetch(`/api/ownwe/profile?charId=${encodeURIComponent(charId)}`)).json();
+        } catch {
+          currentProfile = null;
+        }
+        renderProfileBody();
+        $("profileDialog").showModal();
+      }
+
+      function renderProfileBody() {
+        const p = currentProfile || {};
+        const body = $("profileBody");
+        const chip = (label, key, idx) =>
+          `<span class="profile-chip">${escHtml(label)}<button type="button" data-key="${key}" data-idx="${idx}" class="chip-del" aria-label="删除">×</button></span>`;
+        const staticChip = (label) => `<span class="profile-chip">${escHtml(label)}</span>`;
+        const sectionBlock = (title, sub, chipsHtml) => `
+          <div class="profile-section">
+            <div class="profile-section-head"><strong>${title}</strong><small>${sub}</small></div>
+            <div class="profile-chips">${chipsHtml || '<span class="empty-hint">（空）</span>'}</div>
+          </div>`;
+
+        const tagChips = (p.tags || []).map((t, i) => chip((t.certain ? "✓ " : "? ") + t.text, "tags", i)).join("");
+        const kwChips = (p.keywords || []).map((k, i) => chip(k, "keywords", i)).join("");
+        const tsChips = (p.thinkingStyles || []).map((t, i) => chip(t, "thinkingStyles", i)).join("");
+        const viewItems = (p.core_views || []).concat(p.recent_views || []);
+        const viewChips = viewItems.map((v, i) => chip(v.text, "views", i)).join("");
+        const emoChips = (p.emotions || []).slice(-8).map((e2) => staticChip(e2)).join("");
+        const taskChips = (p.importantTasks || []).map((t, i) => chip(t.q, "importantTasks", i)).join("");
+
+        body.innerHTML = [
+          sectionBlock("身份标签", "✓=已确认  ?=猜测", tagChips),
+          `<div class="profile-add"><input type="text" id="addTagInput" placeholder="加个标签…"><button type="button" id="addTagBtn" class="btn-sm">加</button></div>`,
+          sectionBlock("关键词", "你提过的具体事物", kwChips),
+          `<div class="profile-add"><input type="text" id="addKwInput" placeholder="加个关键词…"><button type="button" id="addKwBtn" class="btn-sm">加</button></div>`,
+          sectionBlock("思维方式", "影响追问深度", tsChips),
+          sectionBlock("你说过的话", "它会记住并延续", viewChips),
+          sectionBlock("近期情绪", "影响语气（自动，不可改）", emoChips),
+          sectionBlock("待展开的事", "它标记的未竟话题", taskChips),
+        ].join("");
+
+        body.querySelectorAll(".chip-del").forEach((btn) => {
+          btn.addEventListener("click", () => deleteProfileItem(btn.dataset.key, parseInt(btn.dataset.idx, 10)));
+        });
+        $("addTagBtn")?.addEventListener("click", () => {
+          const v = $("addTagInput").value.trim();
+          if (v) { (currentProfile.tags = currentProfile.tags || []).push({ text: v, certain: true, core: false }); saveProfile(); }
+        });
+        $("addKwBtn")?.addEventListener("click", () => {
+          const v = $("addKwInput").value.trim();
+          if (v) { (currentProfile.keywords = currentProfile.keywords || []).push(v); saveProfile(); }
+        });
+      }
+
+      function deleteProfileItem(key, idx) {
+        if (!currentProfile) return;
+        if (key === "views") {
+          const coreLen = (currentProfile.core_views || []).length;
+          if (idx < coreLen) currentProfile.core_views.splice(idx, 1);
+          else currentProfile.recent_views.splice(idx - coreLen, 1);
+        } else if (Array.isArray(currentProfile[key])) {
+          currentProfile[key].splice(idx, 1);
+        }
+        saveProfile();
+      }
+
+      async function saveProfile() {
+        if (!currentProfileCharId || !currentProfile) return;
+        try {
+          const res = await fetch("/api/ownwe/profile/save", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ charId: currentProfileCharId, profile: currentProfile }),
+          });
+          currentProfile = await res.json();
+          renderProfileBody();
+        } catch (err) { alert("保存失败：" + err.message); }
+      }
+
+      $("profileDialogClose")?.addEventListener("click", () => $("profileDialog").close());
+      $("profileCloseBtn")?.addEventListener("click", () => $("profileDialog").close());
     })();
     </script>
 
@@ -1159,6 +1332,48 @@
     .ownwe-mode-btn:last-child { border-right: none; }
     .ownwe-mode-btn.active { background: var(--codex); color: #fff; }
     .ownwe-mode-btn:not(.active):hover { background: var(--paper-soft); }
+
+    /* 用户百科 — objective layer form */
+    .user-panel { padding: 1rem 1.2rem; overflow-y: auto; }
+    .user-base-form { margin: 1rem 0 1.5rem; }
+    .user-base-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
+    .user-base-grid label { display: block; }
+    .user-base-grid label span { display: block; font-size: .78rem; color: var(--ink-2); margin-bottom: .25rem; }
+    .user-base-grid input {
+      width: 100%; padding: .45rem .65rem; border-radius: 8px; box-sizing: border-box;
+      border: 1px solid var(--line); background: var(--paper-soft); color: var(--ink); font-family: inherit; font-size: .9rem;
+    }
+    .user-base-wide { grid-column: 1 / -1; }
+    .user-base-actions { display: flex; align-items: center; gap: .8rem; margin-top: .9rem; }
+    .user-base-saved { color: var(--gemini); font-size: .85rem; }
+    .char-profiles-head { display: flex; align-items: baseline; gap: .6rem; margin-top: .5rem; }
+    .char-profiles-head h3 { margin: 0; color: var(--ink); }
+    .char-profiles-head small { color: var(--ink-2); font-size: .78rem; }
+    .char-profiles-list { display: flex; flex-direction: column; gap: .6rem; margin-top: .8rem; }
+    .char-profile-card {
+      display: flex; align-items: center; gap: .7rem;
+      padding: .6rem .9rem; border-radius: 12px;
+      background: var(--paper); border: 1px solid var(--line);
+    }
+
+    /* Profile dialog body */
+    .profile-section { margin-top: 1rem; }
+    .profile-section-head { display: flex; align-items: baseline; gap: .5rem; margin-bottom: .4rem; }
+    .profile-section-head strong { color: var(--ink); font-size: .92rem; }
+    .profile-section-head small { color: var(--ink-2); font-size: .74rem; }
+    .profile-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
+    .profile-chip {
+      display: inline-flex; align-items: center; gap: .3rem;
+      padding: .25rem .55rem; border-radius: 14px; font-size: .82rem;
+      background: var(--codex-dim); color: var(--ink); border: 1px solid var(--line);
+    }
+    .chip-del { border: none; background: none; color: var(--ink-2); cursor: pointer; font-size: 1rem; line-height: 1; padding: 0; }
+    .chip-del:hover { color: var(--danger); }
+    .profile-add { display: flex; gap: .4rem; margin-top: .5rem; }
+    .profile-add input {
+      flex: 1; padding: .35rem .6rem; border-radius: 8px; box-sizing: border-box;
+      border: 1px solid var(--line); background: var(--paper-soft); color: var(--ink); font-family: inherit; font-size: .85rem;
+    }
     </style>
   </body>
 </html>

@@ -224,7 +224,7 @@ function tensionRegisterNote(relationshipState, mode) {
 
 // ── Context builder ────────────────────────────────────────────────────────────
 
-function buildOwnWeContext({ character, memories = [], transcript = "", mode = "B", relationshipState = null }) {
+function buildOwnWeContext({ character, memories = [], transcript = "", mode = "B", relationshipState = null, profileBlock = "" }) {
   let frame = "";
   try {
     frame = fs.readFileSync(FRAME_TEMPLATE, "utf8");
@@ -247,8 +247,13 @@ function buildOwnWeContext({ character, memories = [], transcript = "", mode = "
 
   const currentTime = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
 
+  // 画像 block — this character's own picture of the user, woven in as intuition
+  const personaWithProfile = [character.persona_prompt || "", modeNote, profileBlock]
+    .filter(Boolean)
+    .join("\n\n");
+
   return frame
-    .replace("{{PERSONA_PROMPT}}", `${character.persona_prompt || ""}\n\n${modeNote}`)
+    .replace("{{PERSONA_PROMPT}}", personaWithProfile)
     .replace("{{CURRENT_TIME}}", currentTime)
     .replace(/{{#if MEMORY_BLOCK}}[\s\S]*?{{\/if}}/g, memoryBlock
       ? frame.match(/{{#if MEMORY_BLOCK}}([\s\S]*?){{\/if}}/)?.[1]

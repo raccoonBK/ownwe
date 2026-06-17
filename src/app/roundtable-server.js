@@ -24,6 +24,18 @@ const {
   recordInteraction,
 } = require("./ownwe-context");
 const {
+  EXTRACT_EVERY,
+  getUserBase,
+  upsertUserBase,
+  getCharProfile,
+  saveCharProfile,
+  buildProfileSummary,
+  buildExtractionMessages,
+  parseExtraction,
+  applyExtraction,
+  profileToPrompt,
+} = require("./ownwe-profile");
+const {
   RoundtableCheckinPoller,
   RoundtableCheckinStore,
   parseRoundtableCheckinResponse,
@@ -607,6 +619,15 @@ class RoundtableServer {
       this.sendJson(res, 200, listCharacters(this.config.dbPath));
       return;
     }
+    if (req.method === "GET" && requestUrl.pathname === "/api/ownwe/user-base") {
+      this.sendJson(res, 200, getUserBase(this.config.dbPath));
+      return;
+    }
+    if (req.method === "GET" && requestUrl.pathname === "/api/ownwe/profile") {
+      const charId = requestUrl.searchParams.get("charId") || "";
+      this.sendJson(res, 200, getCharProfile(this.config.dbPath, charId));
+      return;
+    }
 
     if (req.method !== "POST") {
       this.sendJson(res, 405, { error: "method not allowed" });
@@ -833,6 +854,17 @@ class RoundtableServer {
           // default auto
         }
         this.sendJson(res, 200, { roomId, mode });
+        return;
+      }
+      case "/api/ownwe/user-base/save": {
+        this.sendJson(res, 200, upsertUserBase(this.config.dbPath, body || {}));
+        return;
+      }
+      case "/api/ownwe/profile/save": {
+        // Save user-edited per-character profile
+        const charId = normalizeText(body.charId);
+        if (!charId) { this.sendJson(res, 400, { error: "charId required" }); return; }
+        this.sendJson(res, 200, saveCharProfile(this.config.dbPath, charId, body.profile || {}));
         return;
       }
       // ────────────────────────────────────────────────────────────
@@ -3098,12 +3130,58 @@ class RoundtableServer {
               });
               // §6: the user just engaged this character → repair tension, grow attachment
               recordInteraction(this.config.dbPath, binding.character_id);
+              // 画像: batch profile extraction every EXTRACT_EVERY messages (async)
+              this.maybeExtractProfile(binding.character_id, messages);
             }
           }
         } catch {
           // never let memory extraction crash the turn handler
         }
       }
+    }
+  }
+
+  // Cheap batch profile extraction (问渠 contract via DeepSeek). Non-blocking.
+  maybeExtractProfile(charId, messages) {
+    try {
+      const profile = getCharProfile(this.config.dbPath, charId);
+      const next = (profile.msgsSinceExtract || 0) + 1;
+      if (next < EXTRACT_EVERY) {
+        saveCharProfile(this.config.dbPath, charId, { ...profile, msgsSinceExtract: next });
+        return;
+      }
+      // reset counter immediately so concurrent turns don't double-fire
+      saveCharProfile(this.config.dbPath, charId, { ...profile, msgsSinceExtract: 0 });
+
+      const deepSeekKey = process.env.DEEPSEEK_API_KEY;
+      if (!deepSeekKey) return; // extraction needs a cheap model; skip silently if unset
+
+      const recent = (Array.isArray(messages) ? messages : []).slice(-EXTRACT_EVERY * 2);
+      const transcript = recent
+        .filter((m) => normalizeText(m.text))
+        .map((m) => `${m.speaker === "user" ? "用户" : "角色"}: ${normalizeText(m.text).slice(0, 200)}`)
+        .join("\n");
+      if (!transcript) return;
+      const userText = recent.filter((m) => m.speaker === "user").map((m) => normalizeText(m.text)).join(" ");
+
+      const extractMessages = buildExtractionMessages({
+        transcript,
+        profileSummary: buildProfileSummary(profile),
+        existingKeywords: profile.keywords || [],
+      });
+
+      // fire-and-forget; never block the turn
+      callDeepSeek({ messages: extractMessages, apiKey: deepSeekKey })
+        .then((raw) => {
+          const extraction = parseExtraction(raw);
+          if (extraction) {
+            applyExtraction(this.config.dbPath, charId, extraction, { sourceText: userText });
+            console.log(`[ownwe] profile updated for ${charId}`);
+          }
+        })
+        .catch((err) => console.warn("[ownwe] profile extraction failed:", err.message));
+    } catch (err) {
+      console.warn("[ownwe] maybeExtractProfile error:", err.message);
     }
   }
 
@@ -3240,7 +3318,16 @@ function buildRuntimePrompt({ speaker, state, stateDir = "", dbPath = "", ownweM
           const memories = readMemories(dbPath, { charId: character.id, limit: 6 });
           const relationshipState = getRelationshipState(dbPath, character.id);
           const transcript = formatTranscript(state.messages, { maxMessages: 20, stateDir, speaker });
-          return buildOwnWeContext({ character, memories, transcript, mode: ownweMode, relationshipState });
+          // 画像: this character's own picture of the user (knows-but-doesn't-cite)
+          let profileBlock = "";
+          try {
+            const userBase = getUserBase(dbPath);
+            const profile = getCharProfile(dbPath, character.id);
+            profileBlock = profileToPrompt(userBase, profile);
+          } catch {
+            profileBlock = "";
+          }
+          return buildOwnWeContext({ character, memories, transcript, mode: ownweMode, relationshipState, profileBlock });
         }
       }
     } catch (err) {

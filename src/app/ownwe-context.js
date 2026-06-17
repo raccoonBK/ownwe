@@ -473,6 +473,7 @@ function extractKeywords(text) {
 
 module.exports = {
   buildOwnWeContext,
+  buildIdentityNote,
   readRecentMomentsContext,
   listCharacters,
   getCharacter,

@@ -2,7 +2,7 @@
 // Authors are either the user ('self') or a character.
 
 const { getDb } = require("../db/connection");
-const { writeMemory, isInSleepHours } = require("./ownwe-context");
+const { writeMemory, readMemories, buildIdentityNote, isInSleepHours } = require("./ownwe-context");
 const { generateCharacterReply } = require("../adapters/api/api-agent-adapter");
 
 // 朋友圈也发生在手机屏幕上 — 评论里不该出现线下动作。
@@ -146,7 +146,7 @@ async function reactToMoment(dbPath, momentId, text, { excludeCharId = null, aut
   let authorHandle = "";
   try {
     const all = getDb(dbPath).prepare(
-      "SELECT id, name, codename, persona_prompt, muted FROM ownwe_characters ORDER BY sort_order ASC LIMIT 6"
+      "SELECT id, name, codename, gender, persona_prompt, muted FROM ownwe_characters ORDER BY sort_order ASC LIMIT 6"
     ).all();
     if (authorCharId) {
       const a = all.find((c) => c.id === authorCharId);
@@ -165,15 +165,17 @@ async function reactToMoment(dbPath, momentId, text, { excludeCharId = null, aut
       const whoPosted = authorCharId
         ? `群里的「${authorHandle}」刚发了一条朋友圈。你看到了。（不是用户发的）`
         : "你的朋友（用户）刚发了一条朋友圈。你看到了。";
+      const identityNote = buildIdentityNote(ch);
       const systemPrompt = [
-        persona ? `你的人设：\n${persona}` : `你是「${ch.name}」。`,
+        identityNote || (persona ? `你的人设：\n${persona}` : `你是「${ch.codename || ch.name}」。`),
+        persona && identityNote ? `你的人设：\n${persona}` : "",
         whoPosted,
         "按你的人设、你和TA的关系，真实地决定要不要点赞、要不要评论。",
         "大多数时候普通的动态你可能只点个赞或什么都不做——别每条都长篇大论，那样很假。",
         "评论要短、像真人随口说的、是你自己的语气。绝不要引用「我记得/根据资料」之类，把了解演成自然。",
         MOMENT_CHANNEL_RULE,
         '严格输出 JSON，无 markdown：{"like": true/false, "comment": ""}。不想评论就 comment 给空字符串。',
-      ].join("\n");
+      ].filter(Boolean).join("\n");
 
       const raw = await generateCharacterReply({
         dbPath,
@@ -303,17 +305,35 @@ async function composeCharMoment(dbPath, ch) {
 }
 
 // ── Characters reply to user's comments ──────────────────────────────────────
-async function reactToComment(dbPath, momentId, userCommentText, momentAuthorId) {
+// replyToId: the comment_id the user was replying to (0 = top-level)
+// When set, only the addressed character is strongly invited to respond;
+// bystanders (other commenters) stay mostly silent.
+async function reactToComment(dbPath, momentId, userCommentText, momentAuthorId, { replyToId = 0 } = {}) {
   try {
     const db = getDb(dbPath);
+
+    // Determine who was addressed by the user's reply
+    let addressedCharId = null;
+    if (replyToId) {
+      const targetComment = db.prepare(
+        "SELECT author_id, author_type FROM ownwe_moment_comments WHERE id = ?"
+      ).get(replyToId);
+      if (targetComment?.author_type === "char") addressedCharId = targetComment.author_id;
+    }
+
     const existing = db.prepare(
       "SELECT DISTINCT author_id FROM ownwe_moment_comments WHERE moment_id = ? AND author_type = 'char'"
     ).all(momentId).map((r) => r.author_id);
-    const candidates = new Set([...(momentAuthorId && momentAuthorId !== "self" ? [momentAuthorId] : []), ...existing]);
+    // Always include moment author + addressed char + existing commenters
+    const candidates = new Set([
+      ...(momentAuthorId && momentAuthorId !== "self" ? [momentAuthorId] : []),
+      ...(addressedCharId ? [addressedCharId] : []),
+      ...existing,
+    ]);
     if (!candidates.size) return;
 
     const charRows = db.prepare(
-      `SELECT id, name, codename, persona_prompt FROM ownwe_characters WHERE id IN (${[...candidates].map(() => "?").join(",")})`
+      `SELECT id, name, codename, gender, persona_prompt FROM ownwe_characters WHERE id IN (${[...candidates].map(() => "?").join(",")})`
     ).all(...candidates);
 
     const moment = db.prepare("SELECT text FROM ownwe_moments WHERE id = ?").get(momentId);
@@ -322,23 +342,30 @@ async function reactToComment(dbPath, momentId, userCommentText, momentAuthorId)
     const prevComments = db.prepare(
       "SELECT oc.text, oc.author_type, oc.author_id, oc.reply_to_name, ch.name as char_name, ch.codename as char_codename FROM ownwe_moment_comments oc LEFT JOIN ownwe_characters ch ON ch.id = oc.author_id WHERE oc.moment_id = ? ORDER BY oc.id ASC LIMIT 10"
     ).all(momentId).map((c) => {
-      // Characters know each other by codename in shared spaces.
       const who = c.author_type === "user" ? "我" : (c.char_codename || c.char_name || "角色");
       return `${who}：${c.reply_to_name ? `回复 ${c.reply_to_name}：` : ""}${c.text}`;
     }).join("\n");
 
     for (const ch of charRows) {
-      if (Math.random() > 0.5) continue;
+      const isAddressed = addressedCharId === ch.id;
+      // Non-addressed bystanders are mostly quiet; only 20% chance they chime in
+      if (!isAddressed && Math.random() > 0.2) continue;
+
       try {
         const persona = (ch.persona_prompt || "").slice(0, 1200);
+        const identityNote = buildIdentityNote(ch);
+        // Tell the character whether they were directly addressed or just witnessing
+        const contextNote = isAddressed
+          ? "用户刚刚直接回复了你的评论，你自然地接一句——简短，像真人随手回的那种。"
+          : "用户在评论区回复了别人，不是直接对你说的。你大概率不用插嘴，除非你真的有话说。如果没有，输出空字符串。";
         const systemPrompt = [
-          persona ? `你的人设：\n${persona}` : `你是「${ch.name}」。`,
-          "这是手机上的朋友圈评论区。用户刚回复了你们的评论区。",
-          "用你的语气自然地接一句——简短，像真人随手回的那种。不要解释，不要说废话。",
-          "如果你觉得没必要回就别回，输出空字符串。",
+          identityNote || (persona ? `你的人设：\n${persona}` : `你是「${ch.codename || ch.name}」。`),
+          persona && identityNote ? `你的人设：\n${persona}` : "",
+          contextNote,
+          "不要解释，不要说废话。",
           MOMENT_CHANNEL_RULE,
           '严格输出 JSON：{"reply": "你的回复内容或空字符串"}',
-        ].join("\n");
+        ].filter(Boolean).join("\n");
 
         const raw = await generateCharacterReply({
           dbPath,

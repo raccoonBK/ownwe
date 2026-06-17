@@ -1046,7 +1046,7 @@ class RoundtableServer {
           const db = require("../db/connection").getDb(this.config.dbPath);
           const moment = db.prepare("SELECT author_id, author_type FROM ownwe_moments WHERE id = ?").get(momentId);
           const momentAuthorId = moment?.author_type === "char" ? moment.author_id : null;
-          reactToComment(this.config.dbPath, momentId, text, momentAuthorId)
+          reactToComment(this.config.dbPath, momentId, text, momentAuthorId, { replyToId: Number(body.replyToId || 0) })
             .catch((err) => console.warn("[ownwe] reactToComment failed:", err.message));
         } catch {}
         return;

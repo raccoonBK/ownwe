@@ -9,6 +9,7 @@
 
 const { getDb } = require("../db/connection");
 const { generateCharacterReply } = require("../adapters/api/api-agent-adapter");
+const { readMemories, buildIdentityNote } = require("./ownwe-context");
 
 // 全局渠道规则：手机文字群聊，没有线下动作。和单聊上下文模板里那条对齐。
 const CHANNEL_RULE =
@@ -54,13 +55,21 @@ function parseMentions(text, members) {
   return hits;
 }
 
-function buildDecisionPrompt({ member, others, transcript, forced }) {
+function buildDecisionPrompt({ member, others, transcript, forced, memories = [] }) {
   const peers = others.map((o) => pub(o)).join("、");
-  const genderNote = member.gender ? `你的性别是${member.gender}。` : "";
+  const identityNote = buildIdentityNote(member);
+  const personaLine = member.persona_prompt
+    ? `你的人设：\n${member.persona_prompt.slice(0, 1200)}`
+    : `你是「${pub(member)}」。`;
+  const memBlock = memories.length
+    ? `你私下对用户和这几个人的了解（凭直觉带入，别直接引用）：\n${memories.map((m) => `- ${m.content}`).join("\n")}`
+    : "";
   const system = [
-    member.persona_prompt ? `你的人设：\n${member.persona_prompt.slice(0, 1200)}` : `你是「${pub(member)}」。`,
-    `在这个群里，大家只用代号相称，你的代号是「${pub(member)}」，不要暴露真名。${genderNote}`,
+    identityNote || `你是「${pub(member)}」。`,
+    personaLine,
+    `在这个群里，大家只用代号相称，你的代号是「${pub(member)}」，不要暴露真名。`,
     `你正在一个群聊里。群里还有：${peers}，以及用户本人。`,
+    memBlock,
     CHANNEL_RULE,
     forced
       ? "刚才有人在群里点名 @ 了你，你应该自然地回应。"
@@ -68,7 +77,7 @@ function buildDecisionPrompt({ member, others, transcript, forced }) {
     "如果你想把话头递给群里某个人，可以在消息里自然地 @ 那个人的代号。",
     "用你自己的语气，短，像真人在群里随手发的。绝不报账记忆（不说「我记得/你之前说过」）。",
     '严格输出 JSON，无 markdown：{"speak": true/false, "message": "要发的话（沉默就空）", "mention": "想@的群成员代号，没有就空"}',
-  ].join("\n");
+  ].filter(Boolean).join("\n");
   const user = `群聊最近记录：\n${transcript}\n\n（你刚看到以上消息，现在决定要不要说话）`;
   return { system, user };
 }
@@ -77,16 +86,23 @@ function buildDecisionPrompt({ member, others, transcript, forced }) {
 // when the group has been quiet (the group-chat embodiment of the Life Tick).
 async function composeGroupOpener({ dbPath, member, others, transcript, ownweMode = "B" }) {
   const peers = others.map((o) => pub(o)).join("、");
-  const genderNote = member.gender ? `你的性别是${member.gender}。` : "";
+  const identityNote = buildIdentityNote(member);
+  const personaLine = member.persona_prompt ? `你的人设：\n${member.persona_prompt.slice(0, 1200)}` : `你是「${pub(member)}」。`;
+  const memories = readMemories(dbPath, { charId: member.id, limit: 5 });
+  const memBlock = memories.length
+    ? `你对这群人的了解（凭直觉带入，别直接引用）：\n${memories.map((m) => `- ${m.content}`).join("\n")}`
+    : "";
   const system = [
-    member.persona_prompt ? `你的人设：\n${member.persona_prompt.slice(0, 1200)}` : `你是「${pub(member)}」。`,
-    `在这个群里大家只用代号相称，你的代号是「${pub(member)}」，不要暴露真名。${genderNote}`,
+    identityNote || `你是「${pub(member)}」。`,
+    personaLine,
+    `在这个群里大家只用代号相称，你的代号是「${pub(member)}」，不要暴露真名。`,
     `群里还有：${peers}，以及用户本人。群里已经安静了一阵子。`,
+    memBlock,
     CHANNEL_RULE,
     "你忽然想在群里起个话头——可能是你最近在想的事、一个突然的念头、一句吐槽、或者想问问大家。",
     "自然、短，像真人在群里随手冒出来的一句。不要说「群里好安静」这种元话题，直接说那件事本身。",
     "绝不报账记忆（不说「我记得/上次」）。可以自然地 @ 某个代号把话头递过去。",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
   const user = transcript
     ? `群聊之前的记录：\n${transcript}\n\n（现在没人说话有一会儿了，你起个新话头）`
     : "（群里还没什么人说话，你来起个话头）";
@@ -161,7 +177,8 @@ async function runGroupReplies({
     if (!forced && Math.random() > activity) continue;
 
     const others = members.filter((x) => x.id !== member.id);
-    const { system, user } = buildDecisionPrompt({ member, others, transcript: runningTranscript, forced });
+    const memories = readMemories(dbPath, { charId: member.id, limit: 6 });
+    const { system, user } = buildDecisionPrompt({ member, others, transcript: runningTranscript, forced, memories });
 
     let decision = null;
     try {

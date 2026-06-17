@@ -43,6 +43,11 @@ const {
   reactToMoment,
 } = require("./ownwe-moments");
 const {
+  maybeGenerateCheckins,
+  takePendingCheckins,
+  unreadCounts,
+} = require("./ownwe-checkin");
+const {
   RoundtableCheckinPoller,
   RoundtableCheckinStore,
   parseRoundtableCheckinResponse,
@@ -427,13 +432,26 @@ class RoundtableServer {
       this.server.listen(port, host);
     });
     console.log(`[roundtable] listening on http://${host}:${port}`);
+    this.startOwnweCheckinPoller();
     console.log("[roundtable] for phone access on the same Wi-Fi, open the machine LAN IP with this port");
     this.checkinPoller.start();
+  }
+
+  startOwnweCheckinPoller() {
+    const everyMin = Number(process.env.OWNWE_CHECKIN_POLL_MIN || 20);
+    if (this._ownweCheckinTimer) clearInterval(this._ownweCheckinTimer);
+    this._ownweCheckinTimer = setInterval(() => {
+      maybeGenerateCheckins(this.config.dbPath, {})
+        .then((made) => { if (made) console.log(`[ownwe] generated ${made} proactive check-in(s)`); })
+        .catch((err) => console.warn("[ownwe] checkin poll failed:", err.message));
+    }, Math.max(1, everyMin) * 60_000);
+    if (this._ownweCheckinTimer.unref) this._ownweCheckinTimer.unref();
   }
 
   async close() {
     this.autoRunToken += 1;
     this.checkinPoller.close();
+    if (this._ownweCheckinTimer) clearInterval(this._ownweCheckinTimer);
     await this.runtimeHub.close();
     await new Promise((resolve) => this.server.close(resolve));
   }
@@ -637,6 +655,10 @@ class RoundtableServer {
     }
     if (req.method === "GET" && requestUrl.pathname === "/api/ownwe/moments") {
       this.sendJson(res, 200, listMoments(this.config.dbPath, {}));
+      return;
+    }
+    if (req.method === "GET" && requestUrl.pathname === "/api/ownwe/unread") {
+      this.sendJson(res, 200, unreadCounts(this.config.dbPath));
       return;
     }
 
@@ -865,6 +887,12 @@ class RoundtableServer {
           // default auto
         }
         this.sendJson(res, 200, { roomId, mode });
+        return;
+      }
+      case "/api/ownwe/checkin/run": {
+        // Manual trigger for testing proactive check-ins (force bypasses thresholds)
+        const made = await maybeGenerateCheckins(this.config.dbPath, { force: Boolean(body.force) });
+        this.sendJson(res, 200, { ok: true, made });
         return;
       }
       case "/api/ownwe/open-character": {
@@ -1532,6 +1560,25 @@ class RoundtableServer {
       `).run(topicId, speaker, character.id);
     } catch (err) {
       console.warn("[ownwe] openCharacterChat bind failed:", err.message);
+    }
+    // Deliver any proactive check-ins this character left while you were away (§5.4)
+    try {
+      const pending = takePendingCheckins(this.config.dbPath, character.id);
+      if (pending.length) {
+        this.store.update((draft) => {
+          for (const p of pending) {
+            draft.messages.push({
+              id: createMessageId(speaker),
+              speaker,
+              text: p.text,
+              at: p.created_at ? new Date(p.created_at.replace(" ", "T") + "Z").toISOString() : new Date().toISOString(),
+            });
+          }
+          return draft;
+        });
+      }
+    } catch (err) {
+      console.warn("[ownwe] deliver checkins failed:", err.message);
     }
     return topicId;
   }

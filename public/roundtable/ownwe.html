@@ -43,6 +43,8 @@
   .ci { flex: 1; min-width: 0; }
   .ci .name { font-size: 15px; }
   .ci .sub { font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .unread-dot { width: 9px; height: 9px; border-radius: 50%; background: #ee5b5b; flex-shrink: 0; }
+  .rail-dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: #ee5b5b; }
   .empty { color: var(--ink-2); font-size: 13px; padding: 22px 16px; line-height: 1.8; }
 
   /* ── Main column ── */
@@ -237,6 +239,7 @@ let activeCharId = null;
 let pollTimer = null;
 let lastKey = "";
 let currentTab = "chats";
+let unread = {};
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 document.querySelectorAll(".rail-btn").forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
@@ -262,6 +265,7 @@ async function loadContacts() {
     <div class="contact ${c.id === activeCharId ? "active" : ""}" data-id="${c.id}">
       <div class="avatar">${c.avatar_emoji || "🙂"}</div>
       <div class="ci"><div class="name">${esc(c.name)}</div><div class="sub">${esc(provLabel(c.provider))}</div></div>
+      ${unread[c.id] ? '<div class="unread-dot"></div>' : ""}
     </div>`).join("");
   box.querySelectorAll(".contact").forEach((el) => {
     el.addEventListener("click", () => openChat(el.dataset.id));
@@ -441,7 +445,28 @@ $("pSave").addEventListener("click", async () => {
   const s = $("pSaved"); s.style.display = "inline"; setTimeout(() => { s.style.display = "none"; }, 1500);
 });
 
+// ── Unread (proactive check-ins) ──────────────────────────────────────────
+async function refreshUnread() {
+  try {
+    const next = await fetch("/api/ownwe/unread").then((r) => r.json());
+    const changed = JSON.stringify(next) !== JSON.stringify(unread);
+    unread = next || {};
+    if (changed && (currentTab === "chats" || currentTab === "contacts")) loadContacts();
+    const any = Object.keys(unread).length > 0;
+    let dot = document.querySelector('.rail-btn[data-tab="chats"] .rail-dot');
+    const btn = document.querySelector('.rail-btn[data-tab="chats"]');
+    if (any && !dot && btn) { dot = document.createElement("div"); dot.className = "rail-dot"; btn.appendChild(dot); }
+    if (!any && dot) dot.remove();
+  } catch (e) {}
+}
+setInterval(refreshUnread, 20000);
+
+// When opening a chat, that character's unread clears (server marks delivered).
+const _openChat = openChat;
+openChat = async function (id) { await _openChat(id); delete unread[id]; setTimeout(refreshUnread, 1500); };
+
 loadContacts();
+refreshUnread();
 </script>
 </body>
 </html>

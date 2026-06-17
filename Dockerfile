@@ -14,7 +14,8 @@ ENV ROUNDTABLE_PORT=8787
 
 EXPOSE 8787
 
-VOLUME ["/data"]
+# Note: the /data volume is configured by railway.toml, not a Docker VOLUME directive
+# (a Dockerfile VOLUME pointing at the same path can conflict with Railway's mount)
 
 # node:sqlite is experimental on Node 22 and requires this flag, or the server crashes on boot
 CMD ["node", "--experimental-sqlite", "./src/app/roundtable-server.js"]

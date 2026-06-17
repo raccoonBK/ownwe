@@ -145,6 +145,11 @@
           <button id="mobileSearchBtn" class="mobile-search-btn" type="button" aria-label="搜索" title="搜索">⌕</button>
           <button id="roomActionsToggle" class="room-actions-toggle" type="button" aria-label="操作" aria-expanded="false">⋯</button>
           <div class="room-actions">
+            <div id="ownweModePin" class="ownwe-mode-pin" title="钉死本房间的模式（A=工具 / B=陪伴 / 自动=分类器决定）">
+              <button type="button" class="ownwe-mode-btn active" data-mode="">自动</button>
+              <button type="button" class="ownwe-mode-btn" data-mode="B">陪伴</button>
+              <button type="button" class="ownwe-mode-btn" data-mode="A">工具</button>
+            </div>
             <button id="mobileTopicsButton" class="button mobile-topic-button" type="button" data-open-topics>New</button>
             <a id="endTopicButton" class="button" href="/action/end-topic">End</a>
             <a id="newCodexButton" class="button btn-codex" href="/action/new-codex">↺ Codex</a>
@@ -964,10 +969,10 @@
       });
 
       // ── Bind dialog ────────────────────────────────────────────────────────
+      // The server binds to whatever topic is currently open (it ignores any
+      // client-sent topicId), so we don't need to know the topic id here.
       function openBindDialog(charId, chars) {
-        const topicId = document.querySelector("[data-topic-id]")?.dataset?.topicId
-          || window.__ownweCurrentTopicId || "";
-        $("bindTopicLabel").textContent = topicId ? `话题 ID: ${topicId}` : "（请先打开一个话题）";
+        $("bindTopicLabel").textContent = "将绑定到你当前打开的那个话题/房间。";
         const sel = $("bindCharSelect");
         sel.innerHTML = chars.map((c) =>
           `<option value="${c.id}" ${c.id === charId ? "selected" : ""}>${c.avatar_emoji || "🤖"} ${escHtml(c.name)}</option>`
@@ -980,11 +985,7 @@
 
       $("bindForm")?.addEventListener("submit", async (e) => {
         e.preventDefault();
-        const topicId = document.querySelector("[data-topic-id]")?.dataset?.topicId
-          || window.__ownweCurrentTopicId || "";
-        if (!topicId) { alert("请先打开一个话题再绑定角色"); return; }
         const payload = {
-          topicId,
           speaker: $("bindSpeakerSelect").value,
           characterId: $("bindCharSelect").value,
         };
@@ -995,8 +996,13 @@
             body: JSON.stringify(payload),
           });
           if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
           $("bindDialog").close();
-          alert(`已绑定！下次发送消息时角色生效。`);
+          if (!data.topicId) {
+            alert("绑定没成功：当前没有打开任何话题。请先在左边打开/新建一个聊天，再来绑定。");
+          } else {
+            alert("已绑定！下次在那个房间发消息时，这个角色就生效了。");
+          }
         } catch (err) {
           alert("绑定失败：" + err.message);
         }
@@ -1009,7 +1015,51 @@
       }
 
       // Expose topic setter for the main app.js to call
-      window.ownweSetCurrentTopic = (id) => { window.__ownweCurrentTopicId = id; };
+      window.ownweSetCurrentTopic = (id) => { window.__ownweCurrentTopicId = id; refreshModePin(); };
+
+      // ── Mode pin (§3.5 manual A/B pin per room) ────────────────────────────
+      // Server applies the pin to whatever topic is currently open, so we just
+      // send {mode} and let it resolve the room.
+      const modePinEl = $("ownweModePin");
+      modePinEl?.querySelectorAll(".ownwe-mode-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const mode = btn.dataset.mode || "";
+          setModePinActive(mode);
+          try {
+            await fetch("/api/ownwe/room-mode", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ mode }),
+            });
+          } catch (e) {
+            console.error("[ownwe] set mode pin failed", e);
+          }
+        });
+      });
+
+      function setModePinActive(mode) {
+        modePinEl?.querySelectorAll(".ownwe-mode-btn").forEach((b) => {
+          b.classList.toggle("active", (b.dataset.mode || "") === (mode || ""));
+        });
+      }
+
+      async function refreshModePin() {
+        try {
+          const res = await fetch("/api/ownwe/room-mode/get", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          });
+          const data = await res.json();
+          setModePinActive(data.mode || "");
+        } catch {
+          setModePinActive("");
+        }
+      }
+
+      // Refresh the pin display on load and whenever the chat tab is reopened.
+      refreshModePin();
+      document.querySelector('[data-view="chat"]')?.addEventListener("click", refreshModePin);
     })();
     </script>
 
@@ -1063,6 +1113,16 @@
     .button.primary { background: var(--accent, #4a6fa5); border-color: var(--accent, #4a6fa5); color: #fff; }
     .button.danger { border-color: #c0392b; color: #c0392b; }
     .button:hover { opacity: .85; }
+
+    /* OwnWe mode pin (A/B/auto) */
+    .ownwe-mode-pin { display: inline-flex; border: 1px solid var(--border, #444); border-radius: 8px; overflow: hidden; }
+    .ownwe-mode-btn {
+      padding: .3rem .6rem; font-size: .78rem; border: none; background: transparent;
+      color: var(--text-muted, #999); cursor: pointer; border-right: 1px solid var(--border, #444);
+    }
+    .ownwe-mode-btn:last-child { border-right: none; }
+    .ownwe-mode-btn.active { background: var(--accent, #4a6fa5); color: #fff; }
+    .ownwe-mode-btn:not(.active):hover { background: var(--hover, #2a2a2a); }
     </style>
   </body>
 </html>

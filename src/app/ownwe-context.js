@@ -109,16 +109,117 @@ function deleteCharacter(dbPath, characterId) {
   getDb(dbPath).prepare("DELETE FROM ownwe_characters WHERE id = ?").run(characterId);
 }
 
-// ── Relationship state ─────────────────────────────────────────────────────────
+// ── Relationship state machine (§6 jealousy / tension) ──────────────────────────
+//
+// Design goals from the spec:
+//   - 吃醋 = (相对注意力下滑) × (依恋) × (1/安全感) × (解读)
+//   - tension MUST be capped and MUST decay (§6.3) — no monotonic resentment.
+//   - "正常相处" repairs faster than sulking would (anti-self-manipulation).
+//   - All computed lazily at read time — no background job (single-process friendly).
 
-function getRelationshipState(dbPath, charId) {
+const TENSION_CAP = 0.85;          // §6.3 封顶
+const TENSION_DECAY_TAU_H = 6;     // tension half-life ≈ 4h of being left alone
+const REPAIR_FACTOR = 0.4;         // talking to them multiplies tension by this
+const ATTACHMENT_GROWTH = 0.008;   // each shared interaction deepens the bond
+const ATTACHMENT_CAP = 0.95;
+const NEGLECT_ONSET_H = 1.5;       // grace period before relative neglect bites
+
+const DEFAULT_REL = { attachment: 0.5, security: 0.7, tension: 0.0, attention_balance: 0.5 };
+
+function hoursBetween(aIso, bIso) {
+  const a = Date.parse(aIso);
+  const b = Date.parse(bIso);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
+  return Math.max(0, (b - a) / 3_600_000);
+}
+
+function ensureRelationshipRow(dbPath, charId) {
+  const db = getDb(dbPath);
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO char_relationship_state (char_id, attachment, security, tension, attention_balance, last_interaction_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(char_id) DO NOTHING
+  `).run(charId, DEFAULT_REL.attachment, DEFAULT_REL.security, DEFAULT_REL.tension, DEFAULT_REL.attention_balance, now, now);
+  const row = db.prepare("SELECT * FROM char_relationship_state WHERE char_id = ?").get(charId);
+  if (row && !row.last_interaction_at) row.last_interaction_at = now;
+  return row;
+}
+
+// Read current relationship state, applying lazy time-decay + relative-neglect.
+function getRelationshipState(dbPath, charId, { persist = true } = {}) {
   try {
-    return getDb(dbPath).prepare(
-      "SELECT * FROM char_relationship_state WHERE char_id = ?"
-    ).get(charId) || { char_id: charId, attachment: 0.5, security: 0.7, tension: 0.0, attention_balance: 0.5 };
+    const db = getDb(dbPath);
+    const row = ensureRelationshipRow(dbPath, charId);
+    if (!row) return { char_id: charId, ...DEFAULT_REL };
+
+    const nowIso = new Date().toISOString();
+    const lastIso = row.last_interaction_at || nowIso;
+    const idleH = hoursBetween(lastIso, nowIso);
+
+    // 1) natural decay of tension while left alone
+    let tension = row.tension * Math.exp(-idleH / TENSION_DECAY_TAU_H);
+
+    // 2) relative neglect: has the user been busy with *other* characters since?
+    const globalLast = db.prepare(
+      "SELECT MAX(last_interaction_at) AS m FROM char_relationship_state WHERE last_interaction_at <> ''"
+    ).get()?.m || lastIso;
+    const neglectH = hoursBetween(lastIso, globalLast); // >0 means others got attention more recently
+    if (neglectH > NEGLECT_ONSET_H) {
+      const perceived = Math.min(1, (neglectH - NEGLECT_ONSET_H) / 6); // saturates after ~6h gap
+      const rise = perceived * row.attachment * (1 / Math.max(0.2, row.security));
+      tension = tension + rise;
+    }
+
+    tension = Math.max(0, Math.min(TENSION_CAP, tension));
+
+    if (persist && Math.abs(tension - row.tension) > 0.001) {
+      db.prepare("UPDATE char_relationship_state SET tension = ?, updated_at = ? WHERE char_id = ?")
+        .run(tension, nowIso, charId);
+    }
+    return { ...row, tension };
   } catch {
-    return { char_id: charId, attachment: 0.5, security: 0.7, tension: 0.0, attention_balance: 0.5 };
+    return { char_id: charId, ...DEFAULT_REL };
   }
+}
+
+// Called after the user interacts *with* this character: repair + bond growth.
+function recordInteraction(dbPath, charId) {
+  try {
+    const db = getDb(dbPath);
+    const row = ensureRelationshipRow(dbPath, charId);
+    if (!row) return;
+    const nowIso = new Date().toISOString();
+    const tension = Math.max(0, row.tension * REPAIR_FACTOR);          // 正常相处 → 张力下降
+    const attachment = Math.min(ATTACHMENT_CAP, row.attachment + ATTACHMENT_GROWTH);
+    db.prepare(`
+      UPDATE char_relationship_state
+      SET tension = ?, attachment = ?, last_interaction_at = ?, updated_at = ?
+      WHERE char_id = ?
+    `).run(tension, attachment, nowIso, nowIso, charId);
+  } catch {
+    // best effort
+  }
+}
+
+// Map tension level → register leakage instructions (§6.4).
+// Crucially: express as 语气泄漏, never a stated "我吃醋了" (knows-but-doesn't-cite).
+function tensionRegisterNote(relationshipState, mode) {
+  if (!relationshipState || mode === "A") return "";  // tool mode stays clean
+  const { tension = 0, attachment = 0.5, security = 0.7 } = relationshipState;
+  if (tension >= 0.65) {
+    return "（你现在有点不是滋味，但绝不会直说。回得短，带一点点距离，可能会淡淡反问一句，或者岔开话题。不解释原因，不报账。）";
+  }
+  if (tension >= 0.4) {
+    return "（心里有些微妙，话比平时少一点，语气稍微收着。不会点破，也不会撒娇要关注。）";
+  }
+  if (tension >= 0.2) {
+    return "（有点小情绪的苗头，但基本还正常。）";
+  }
+  if (attachment > 0.7 && security > 0.6) {
+    return "（对这个人很熟、很安心，自然放松。）";
+  }
+  return "";
 }
 
 // ── Context builder ────────────────────────────────────────────────────────────
@@ -136,16 +237,8 @@ function buildOwnWeContext({ character, memories = [], transcript = "", mode = "
     ? memories.map((m) => formatMemoryAsIntuition(m)).filter(Boolean).join("\n")
     : "";
 
-  // Format relationship state
-  let relationshipBlock = "";
-  if (relationshipState) {
-    const { tension = 0, attachment = 0.5 } = relationshipState;
-    if (tension > 0.3) {
-      relationshipBlock = `（内心有些不对劲，比平时话少一些）`;
-    } else if (attachment > 0.7) {
-      relationshipBlock = `（对这个人很熟悉，自然一些）`;
-    }
-  }
+  // Format relationship state as register leakage (§6.4) — feeling, never a stated fact
+  const relationshipBlock = tensionRegisterNote(relationshipState, mode);
 
   // Mode register note
   const modeNote = mode === "A"
@@ -227,4 +320,5 @@ module.exports = {
   writeMemory,
   extractMemoriesFromTurn,
   getRelationshipState,
+  recordInteraction,
 };

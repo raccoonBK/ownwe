@@ -21,6 +21,7 @@ const {
   readMemories,
   extractMemoriesFromTurn,
   getRelationshipState,
+  recordInteraction,
 } = require("./ownwe-context");
 const {
   RoundtableCheckinPoller,
@@ -803,9 +804,35 @@ class RoundtableServer {
         return;
       }
       case "/api/ownwe/room-mode": {
-        // Pin A/B mode for current room
-        this._ownweRoomMode = body.mode || "";
-        this.sendJson(res, 200, { ok: true, mode: this._ownweRoomMode });
+        // Pin A/B mode per room (§3.5 manual pin). Empty mode = auto (classifier decides).
+        const roomId = normalizeText(body.topicId || body.roomId) || (this.store.get()?.id || "");
+        const mode = body.mode === "A" || body.mode === "B" ? body.mode : "";
+        if (roomId) {
+          try {
+            const db = require("../db/connection").getDb(this.config.dbPath);
+            db.prepare(`
+              INSERT INTO room_mode_pins (room_id, mode, updated_at)
+              VALUES (?, ?, datetime('now'))
+              ON CONFLICT(room_id) DO UPDATE SET mode = excluded.mode, updated_at = excluded.updated_at
+            `).run(roomId, mode);
+          } catch (err) {
+            console.warn("[ownwe] room-mode pin failed:", err.message);
+          }
+        }
+        this._ownweRoomMode = mode; // keep a fast in-memory hint for the current room
+        this.sendJson(res, 200, { ok: true, roomId, mode });
+        return;
+      }
+      case "/api/ownwe/room-mode/get": {
+        const roomId = normalizeText(body.topicId || body.roomId) || (this.store.get()?.id || "");
+        let mode = "";
+        try {
+          const db = require("../db/connection").getDb(this.config.dbPath);
+          mode = db.prepare("SELECT mode FROM room_mode_pins WHERE room_id = ?").get(roomId)?.mode || "";
+        } catch {
+          // default auto
+        }
+        this.sendJson(res, 200, { roomId, mode });
         return;
       }
       // ────────────────────────────────────────────────────────────
@@ -1998,7 +2025,18 @@ class RoundtableServer {
     // OwnWe: if no explicit target, classify and set target + mode
     if (!normalizeSpeakerTarget(replyBody.target)) {
       const text = normalizeText(body.text || body.message || "");
-      const result = classify(text, { pinnedMode: this._ownweRoomMode || "" });
+      // §3.5: read the per-room manual pin (empty = let the classifier decide)
+      let pinnedMode = "";
+      try {
+        const roomId = this.store.get()?.id || "";
+        if (roomId) {
+          const db = require("../db/connection").getDb(this.config.dbPath);
+          pinnedMode = db.prepare("SELECT mode FROM room_mode_pins WHERE room_id = ?").get(roomId)?.mode || "";
+        }
+      } catch {
+        pinnedMode = this._ownweRoomMode || "";
+      }
+      const result = classify(text, { pinnedMode });
       replyBody = {
         ...replyBody,
         target: result.speaker === "tool" ? "codex" : "claude",
@@ -3058,6 +3096,8 @@ class RoundtableServer {
                 dbPath: this.config.dbPath,
                 mode: this._ownweRoomMode || "B",
               });
+              // §6: the user just engaged this character → repair tension, grow attachment
+              recordInteraction(this.config.dbPath, binding.character_id);
             }
           }
         } catch {

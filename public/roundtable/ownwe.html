@@ -203,6 +203,7 @@
         <div class="chat-av" id="chatAv" style="display:none">🙂</div>
         <span class="chat-title" id="chatTitle">选择一个角色开始聊天</span>
         <span class="status" id="chatStatus"></span>
+        <button class="btn" id="unlockBtn" title="解除卡顿" style="display:none;font-size:12px;padding:4px 10px;color:var(--ink-2)">⏹ 解卡</button>
       </div>
       <div class="messages" id="messages"><div class="placeholder"><div class="big">☾</div>左边选一个角色，<br>或新建一个。</div></div>
       <div class="composer" id="composer" style="display:none">
@@ -527,6 +528,18 @@ function renderMessages(snap, force) {
   }
   box.innerHTML = html || '<div class="placeholder">打个招呼吧 👋</div>';
   $("chatStatus").textContent = running ? "对方正在输入…" : "";
+  // Show unlock button only when stuck for a while (running but no new content)
+  if (!force) {
+    const unlockBtn = $("unlockBtn");
+    if (running) {
+      if (!unlockBtn._stuckTimer) {
+        unlockBtn._stuckTimer = setTimeout(() => { unlockBtn.style.display = ""; }, 12000);
+      }
+    } else {
+      if (unlockBtn._stuckTimer) { clearTimeout(unlockBtn._stuckTimer); unlockBtn._stuckTimer = null; }
+      unlockBtn.style.display = "none";
+    }
+  }
   if (atBottom || force) box.scrollTop = box.scrollHeight;
 
   if (animate) {
@@ -598,6 +611,16 @@ function startPolling() {
   }, 1300);
 }
 function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
+
+// ── Unlock (解卡) ──────────────────────────────────────────────────────────
+$("unlockBtn").addEventListener("click", async () => {
+  try {
+    await api("/api/pause");
+    $("unlockBtn").style.display = "none";
+    if ($("unlockBtn")._stuckTimer) { clearTimeout($("unlockBtn")._stuckTimer); $("unlockBtn")._stuckTimer = null; }
+    lastKey = "";
+  } catch (e) { console.warn("unlock failed:", e); }
+});
 
 let pendingImages = [];
 function renderAttachPreview() {
@@ -817,8 +840,12 @@ function attachMomentHandlers(box) {
     if (!text) return;
     const replyToId = inp.dataset.replyToId ? Number(inp.dataset.replyToId) : 0;
     const replyToName = inp.dataset.replyToName || "";
+    if (inp) { inp.value = ""; inp.dataset.replyToId = ""; inp.dataset.replyToName = ""; inp.placeholder = "说点什么…"; }
     await api("/api/ownwe/moments/comment", { momentId: Number(mid), text, replyToId, replyToName });
     loadMoments();
+    // Characters may reply — refresh again after a delay to catch their response
+    setTimeout(loadMoments, 4000);
+    setTimeout(loadMoments, 9000);
   }));
   box.querySelectorAll("[data-reply]").forEach((b) => b.addEventListener("click", () => {
     const cmtEl = b.closest(".comment");

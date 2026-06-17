@@ -240,6 +240,75 @@ async function composeCharMoment(apiKey, ch) {
   return (raw || "").trim().slice(0, 500);
 }
 
+// ── Characters reply to user's comments ──────────────────────────────────────
+// Called when the user adds a comment. The character whose moment it is (or any
+// char who already commented) may reply back — keeps the thread alive.
+async function reactToComment(dbPath, momentId, userCommentText, momentAuthorId) {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) return;
+  try {
+    const db = getDb(dbPath);
+    // Build candidate responders: moment author + chars who already commented
+    const existing = db.prepare(
+      "SELECT DISTINCT author_id FROM ownwe_moment_comments WHERE moment_id = ? AND author_type = 'char'"
+    ).all(momentId).map((r) => r.author_id);
+    const candidates = new Set([...(momentAuthorId && momentAuthorId !== "self" ? [momentAuthorId] : []), ...existing]);
+    if (!candidates.size) return;
+
+    // Load their personas
+    const charRows = db.prepare(
+      `SELECT id, name, persona_prompt FROM ownwe_characters WHERE id IN (${[...candidates].map(() => "?").join(",")})`
+    ).all(...candidates);
+
+    // The moment text for context
+    const moment = db.prepare("SELECT text FROM ownwe_moments WHERE id = ?").get(momentId);
+    const momentText = moment?.text || "";
+
+    // Existing comments for context
+    const prevComments = db.prepare(
+      "SELECT oc.text, oc.author_type, oc.author_id, oc.reply_to_name, ch.name as char_name FROM ownwe_moment_comments oc LEFT JOIN ownwe_characters ch ON ch.id = oc.author_id WHERE oc.moment_id = ? ORDER BY oc.id ASC LIMIT 10"
+    ).all(momentId).map((c) => {
+      const who = c.author_type === "user" ? "我" : (c.char_name || "角色");
+      return `${who}：${c.reply_to_name ? `回复 ${c.reply_to_name}：` : ""}${c.text}`;
+    }).join("\n");
+
+    for (const ch of charRows) {
+      // ~50% chance to reply per char, don't spam
+      if (Math.random() > 0.5) continue;
+      try {
+        const persona = (ch.persona_prompt || "").slice(0, 1200);
+        const messages = [
+          {
+            role: "system",
+            content: [
+              persona ? `你的人设：\n${persona}` : `你是「${ch.name}」。`,
+              "这是手机上的朋友圈评论区。用户刚回复了你们的评论区。",
+              "用你的语气自然地接一句——简短，像真人随手回的那种。不要解释，不要说废话。",
+              "如果你觉得没必要回就别回，输出空字符串。",
+              '严格输出 JSON：{"reply": "你的回复内容或空字符串"}',
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: `朋友圈原文：${momentText.slice(0, 200)}\n\n评论区：\n${prevComments}\n\n用户刚说：${userCommentText.slice(0, 200)}`,
+          },
+        ];
+        const raw = await callDeepSeek({ messages, apiKey });
+        const m = raw && raw.match(/\{[\s\S]*\}/);
+        if (!m) continue;
+        let parsed;
+        try { parsed = JSON.parse(m[0]); } catch { continue; }
+        const reply = typeof parsed.reply === "string" ? parsed.reply.trim() : "";
+        if (reply) {
+          db.prepare(
+            "INSERT INTO ownwe_moment_comments (moment_id, author_type, author_id, text, reply_to_name) VALUES (?, 'char', ?, ?, ?)"
+          ).run(momentId, ch.id, reply.slice(0, 500), "我");
+        }
+      } catch {}
+    }
+  } catch {}
+}
+
 module.exports = {
   listMoments,
   createMoment,
@@ -248,5 +317,6 @@ module.exports = {
   toggleBlock,
   listBlockedCharIds,
   reactToMoment,
+  reactToComment,
   maybeCharacterPostMoments,
 };

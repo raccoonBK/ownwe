@@ -43,6 +43,7 @@ const {
   toggleBlock,
   listBlockedCharIds,
   reactToMoment,
+  reactToComment,
   maybeCharacterPostMoments,
 } = require("./ownwe-moments");
 const {
@@ -1008,11 +1009,20 @@ class RoundtableServer {
       case "/api/ownwe/moments/comment": {
         const text = normalizeText(body.text);
         if (!text || !body.momentId) { this.sendJson(res, 400, { error: "momentId and text required" }); return; }
+        const momentId = Number(body.momentId);
         addComment(this.config.dbPath, {
-          momentId: Number(body.momentId), authorType: "user", authorId: "self", text,
+          momentId, authorType: "user", authorId: "self", text,
           replyToId: Number(body.replyToId || 0), replyToName: normalizeText(body.replyToName || ""),
         });
         this.sendJson(res, 200, { ok: true });
+        // Characters may reply to the user's comment (async, best-effort)
+        try {
+          const db = require("../db/connection").getDb(this.config.dbPath);
+          const moment = db.prepare("SELECT author_id, author_type FROM ownwe_moments WHERE id = ?").get(momentId);
+          const momentAuthorId = moment?.author_type === "char" ? moment.author_id : null;
+          reactToComment(this.config.dbPath, momentId, text, momentAuthorId)
+            .catch((err) => console.warn("[ownwe] reactToComment failed:", err.message));
+        } catch {}
         return;
       }
       case "/api/ownwe/moments/block": {

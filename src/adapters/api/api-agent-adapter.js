@@ -331,6 +331,11 @@ function callOpenAICompat({ apiKey, baseUrl, path, model, messages, systemPrompt
   });
 }
 
+// Hard ceiling on a single LLM call. Without this, an unresponsive provider
+// leaves the request (and the character's "正在输入…") hanging forever — the
+// "尤金卡住了一直无法回复" symptom. 90s is generous even for reasoning models.
+const API_TIMEOUT_MS = Number(process.env.OWNWE_API_TIMEOUT_MS || 90_000);
+
 function httpPost(url, body, headers, parseResponse) {
   return new Promise((resolve, reject) => {
     const options = {
@@ -342,6 +347,7 @@ function httpPost(url, body, headers, parseResponse) {
         ...headers,
         "content-length": Buffer.byteLength(body),
       },
+      timeout: API_TIMEOUT_MS,
     };
 
     const req = https.request(options, (res) => {
@@ -359,10 +365,55 @@ function httpPost(url, body, headers, parseResponse) {
       });
     });
 
+    // Fires when the socket idles past `timeout` — we must destroy it ourselves.
+    req.on("timeout", () => {
+      req.destroy(new Error(`API request timed out after ${API_TIMEOUT_MS}ms`));
+    });
     req.on("error", (err) => reject(new Error(`API request failed: ${err.message}`)));
     req.write(body);
     req.end();
   });
+}
+
+// Module-level single call (no closure deps) so other OwnWe modules — group chat,
+// moment reactions — can drive a character's own provider directly.
+async function callCharacterApi({ provider, apiKey, baseUrl = "", model, messages, systemPrompt = "", images = [] }) {
+  const providerCfg = PROVIDER_CONFIGS[provider] || PROVIDER_CONFIGS.openai;
+  const resolvedBase = baseUrl || providerCfg.baseUrl;
+  const resolvedModel = model || providerCfg.defaultModel;
+  if (provider === "anthropic") {
+    return callAnthropicMessages({ apiKey, baseUrl: resolvedBase, model: resolvedModel, messages, systemPrompt, images });
+  }
+  return callOpenAICompat({ apiKey, baseUrl: resolvedBase, path: providerCfg.path, model: resolvedModel, messages, systemPrompt, images });
+}
+
+// One-stop: resolve a character's provider/key/model (incl. deep-thinking tier and
+// image-vision routing) and produce a single reply. Used by the group-chat engine.
+async function generateCharacterReply({ dbPath, charId, systemPrompt = "", messages = [], images = [], ownweMode = "B" }) {
+  const ch = getDb(dbPath).prepare(
+    "SELECT provider, model, api_key_override, deep_thinking FROM ownwe_characters WHERE id = ?"
+  ).get(charId);
+  if (!ch) throw new Error("character not found: " + charId);
+  let provider = ch.provider || "anthropic";
+  let apiKey = (ch.api_key_override && ch.api_key_override.trim()) || envKeyForProvider(provider);
+  let model = (ch.model || "").trim();
+  if (!model) {
+    const tier = MODEL_TIERS[provider];
+    if (tier) {
+      const deepThinking = ch.deep_thinking !== 0;
+      model = (deepThinking || ownweMode === "A") ? tier.strong : tier.cheap;
+    }
+  }
+  if (!model) model = PROVIDER_CONFIGS[provider]?.defaultModel || "";
+  const hasImages = Array.isArray(images) && images.length > 0;
+  if (hasImages) {
+    const v = pickVisionTarget(provider, apiKey);
+    if (v) { provider = v.provider; apiKey = v.apiKey; model = v.model; }
+  }
+  if (!apiKey) {
+    throw new Error(`[ownwe-group] no API key for provider=${provider}（角色没配 key，环境也没有 ${provider.toUpperCase()}_API_KEY）`);
+  }
+  return callCharacterApi({ provider, apiKey, model, messages, systemPrompt, images: hasImages ? images : [] });
 }
 
 // OwnWe: resolve the bound character's provider/key/model for this turn.
@@ -431,4 +482,10 @@ function envKeyForProvider(provider) {
   }
 }
 
-module.exports = { createApiAgentAdapter, PROVIDER_CONFIGS };
+module.exports = {
+  createApiAgentAdapter,
+  PROVIDER_CONFIGS,
+  callCharacterApi,
+  generateCharacterReply,
+  envKeyForProvider,
+};

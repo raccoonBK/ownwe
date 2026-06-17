@@ -51,6 +51,7 @@ const {
   takePendingCheckins,
   unreadCounts,
 } = require("./ownwe-checkin");
+const { runGroupReplies } = require("./ownwe-group");
 const {
   RoundtableCheckinPoller,
   RoundtableCheckinStore,
@@ -510,18 +511,12 @@ class RoundtableServer {
     if (!currentGroup?.topic_id || currentGroup.topic_id !== topicId) {
       db.prepare("UPDATE ownwe_groups SET topic_id = ? WHERE id = ?").run(topicId, groupId);
     }
-    // Bind current char (round-robin) to claude slot
-    const idx = group.current_idx % charIds.length;
-    const charId = charIds[idx];
+    // No single-character binding: group replies go through the self-select engine
+    // (runGroupReplies), where each member decides independently whether to speak.
+    // Clear any stale binding so the single-character path can't fire here.
     try {
-      db.prepare(`
-        INSERT INTO ownwe_character_bindings (topic_id, speaker, character_id)
-        VALUES (?, ?, ?)
-        ON CONFLICT(topic_id, speaker) DO UPDATE SET character_id = excluded.character_id, bound_at = datetime('now')
-      `).run(topicId, "claude", charId);
-    } catch (err) {
-      console.warn("[ownwe] openGroupChat bind failed:", err.message);
-    }
+      db.prepare("DELETE FROM ownwe_character_bindings WHERE topic_id = ? AND speaker = ?").run(topicId, "claude");
+    } catch {}
     return topicId;
   }
 
@@ -2294,7 +2289,87 @@ class RoundtableServer {
     });
   }
 
+  // OwnWe: is the active topic a group chat? (container.id === ownwe group id)
+  ownweGroupForState() {
+    const state = this.store.get();
+    const cid = state?.container?.id || "";
+    if (!String(cid).startsWith("ownwe-group-")) return null;
+    try {
+      const g = require("../db/connection").getDb(this.config.dbPath)
+        .prepare("SELECT * FROM ownwe_groups WHERE id = ?").get(cid);
+      if (!g) return null;
+      return { id: g.id, name: g.name, charIds: JSON.parse(g.char_ids || "[]") };
+    } catch {
+      return null;
+    }
+  }
+
+  // OwnWe group chat: members self-decide who replies (no round-robin), with
+  // @mention routing + hop-bounded fan-out. Runs off the main request thread.
+  scheduleGroupReplies(group, body = {}) {
+    const token = this.autoRunToken + 1;
+    this.autoRunToken = token;
+    const userText = normalizeText(body.text || body.message || "");
+    const ownweMode = this._lastOwnweMode || "B";
+    const topicId = this.store.get()?.id || "";
+    this.store.update((draft) => {
+      draft.running = true;
+      draft.status = "running";
+      draft.updatedAt = new Date().toISOString();
+      return draft;
+    }, { silentIfEmpty: true });
+
+    setImmediate(async () => {
+      try {
+        const transcript = formatGroupTranscript(this.store.get().messages, { maxMessages: 18 });
+        await runGroupReplies({
+          dbPath: this.config.dbPath,
+          charIds: group.charIds,
+          transcript,
+          userText,
+          ownweMode,
+          isStale: () => this.autoRunToken !== token
+            || (this.store.get()?.id || "") !== topicId
+            || (this.ownweGroupForState()?.id || "") !== group.id,
+          pushMessage: (m) => {
+            this.store.update((draft) => {
+              draft.messages.push(createMessage("claude", m.text, {
+                ownweCharId: m.charId,
+                ownweCharName: m.charName,
+                ownweCharEmoji: m.charEmoji,
+              }));
+              draft.updatedAt = new Date().toISOString();
+              return draft;
+            });
+          },
+        });
+      } catch (error) {
+        console.warn("[ownwe-group] run failed:", error.message);
+      } finally {
+        if (this.autoRunToken === token) {
+          this.store.update((draft) => {
+            draft.running = false;
+            draft.status = "ready";
+            draft.updatedAt = new Date().toISOString();
+            return draft;
+          }, { silentIfEmpty: true });
+        }
+      }
+    });
+  }
+
   scheduleReplies(body = {}) {
+    // OwnWe group chat takes a completely different path (multi-character self-select).
+    const group = this.ownweGroupForState();
+    if (group) {
+      // still classify A/B so members get the right register
+      try {
+        const result = classify(normalizeText(body.text || body.message || ""), {});
+        this._lastOwnweMode = result.mode;
+      } catch {}
+      this.scheduleGroupReplies(group, body);
+      return;
+    }
     let replyBody = withResolvedReplyTarget(body);
     // OwnWe: always compute A/B mode (even when the speaker is forced, e.g. 1-on-1
     // character chats), but only override the target when none was provided.
@@ -5055,6 +5130,20 @@ function createMessage(speaker, text, extra = {}) {
     at: new Date().toISOString(),
     ...extra,
   };
+}
+
+// OwnWe group chat: render messages as "名字：内容" so each member's decision
+// prompt sees who said what (character bubbles carry ownweCharName).
+function formatGroupTranscript(messages, { maxMessages = 18 } = {}) {
+  const list = Array.isArray(messages) ? messages.slice(-maxMessages) : [];
+  return list.map((m) => {
+    if (!m) return "";
+    if (m.speaker === "user") return `我：${normalizeText(m.text)}`;
+    if (m.speaker === "system") return "";
+    const name = m.ownweCharName || "某成员";
+    const t = normalizeText(m.text);
+    return t ? `${name}：${t}` : "";
+  }).filter(Boolean).join("\n");
 }
 
 function createSummaryInjectionMessage({ speaker, title = "", note = "" } = {}) {

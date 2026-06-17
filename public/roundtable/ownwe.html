@@ -68,6 +68,8 @@
   .bubble { padding: 9px 13px; border-radius: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
   .row.them .bubble { background: var(--them); color: var(--them-ink); border-top-left-radius: 4px; }
   .row.me .bubble { background: var(--me); color: var(--me-ink); border-top-right-radius: 4px; }
+  .them-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .bubble-name { font-size: 11px; color: var(--ink-2); margin-left: 2px; }
   .sys-note { align-self: center; color: var(--ink-2); font-size: 12px; background: rgba(255,255,255,.04); padding: 4px 12px; border-radius: 10px; }
   .typing { color: var(--ink-2); font-style: italic; }
   .composer { border-top: 1px solid var(--line); padding: 14px 18px; flex-shrink: 0; }
@@ -511,14 +513,21 @@ function renderMessages(snap, force) {
     } else if (m.speaker === "user") {
       html += `<div class="row me"><div class="av">我</div><div class="bubble">${buildUserBubbleContent(m)}</div></div>`;
     } else {
+      // Group member messages carry their own name/emoji/charId; 1-on-1 falls back to active char.
+      const isGroupMsg = Boolean(m.ownweCharName);
+      const mav = isGroupMsg ? (m.ownweCharEmoji || "🙂") : av;
+      const mcid = m.ownweCharId || (isGroupMsg ? "" : (charId || ""));
+      const nameTag = isGroupMsg ? `<div class="bubble-name">${esc(m.ownweCharName)}</div>` : "";
+      const avEl = `<div class="av"${mcid ? ` data-char="${mcid}" onclick="openProfilePanel('${mcid}')"` : ""}>${mav}</div>`;
       const isAnim = animate && m === last;
       if (isAnim || (m.pending && !m.text)) {
         const txt = isAnim ? "" : '<span class="typing">正在输入…</span>';
-        html += `<div class="row them"><div class="av" data-char="${charId || ""}" onclick="openProfilePanel('${charId || ""}')">${av}</div><div class="bubble"${isAnim ? ' data-anim="1"' : ""}>${txt}</div></div>`;
+        html += `<div class="row them">${avEl}<div class="them-col">${nameTag}<div class="bubble"${isAnim ? ' data-anim="1"' : ""}>${txt}</div></div></div>`;
       } else if (m.text) {
-        const bubbles = splitBubbles(m.text);
-        html += bubbles.map((b, i) =>
-          `<div class="row them"><div class="av" data-char="${charId || ""}" onclick="openProfilePanel('${charId || ""}')">${av}</div><div class="bubble">${esc(b)}</div></div>`
+        // group bubbles stay whole; 1-on-1 replies may split into paragraphs
+        const bubbles = isGroupMsg ? [m.text] : splitBubbles(m.text);
+        html += bubbles.map((b) =>
+          `<div class="row them">${avEl}<div class="them-col">${nameTag}<div class="bubble">${esc(b)}</div></div></div>`
         ).join("");
       }
     }

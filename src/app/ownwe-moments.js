@@ -3,6 +3,31 @@
 
 const { getDb } = require("../db/connection");
 const { callDeepSeek } = require("./roundtable-deepseek");
+const { writeMemory } = require("./ownwe-context");
+
+// 朋友圈也发生在手机屏幕上 — 评论里不该出现线下动作。
+const MOMENT_CHANNEL_RULE =
+  "这一切都在手机朋友圈里。不要写「走过去/坐到身边/递东西」这类线下动作，也不要写括号旁白。只发文字。";
+
+// 朋友圈是所有角色共享可见的。一个角色（actor）在某条动态下评论后，把"看到的"
+// 写进其他角色的记忆 —— 于是 A 能记得 "B 在我朋友圈下说过什么"（跨角色见证）。
+function recordMomentObservation(dbPath, { momentText, actorId, actorName, commentText }) {
+  if (!actorId || !commentText) return;
+  let others = [];
+  try {
+    others = getDb(dbPath).prepare("SELECT id FROM ownwe_characters WHERE id != ?").all(actorId);
+  } catch {
+    return;
+  }
+  const content = `（朋友圈里看到的）在「${String(momentText || "").slice(0, 30)}」这条下面，${actorName}回了一句：「${String(commentText).slice(0, 50)}」`;
+  for (const o of others) {
+    try {
+      writeMemory(dbPath, { charId: o.id, content, context: "moments", valence: 0.5, keywords: [] });
+    } catch {
+      // best effort
+    }
+  }
+}
 
 // ── Read ─────────────────────────────────────────────────────────────────────
 
@@ -128,6 +153,7 @@ async function reactToMoment(dbPath, momentId, text) {
             "按你的人设、你和TA的关系，真实地决定要不要点赞、要不要评论。",
             "大多数时候普通的动态你可能只点个赞或什么都不做——别每条都长篇大论，那样很假。",
             "评论要短、像真人随口说的、是你自己的语气。绝不要引用「我记得/根据资料」之类，把了解演成自然。",
+            MOMENT_CHANNEL_RULE,
             '严格输出 JSON，无 markdown：{"like": true/false, "comment": ""}。不想评论就 comment 给空字符串。',
           ].join("\n"),
         },
@@ -150,6 +176,8 @@ async function reactToMoment(dbPath, momentId, text) {
           db.prepare(
             "INSERT INTO ownwe_moment_comments (moment_id, author_type, author_id, text) VALUES (?, 'char', ?, ?)"
           ).run(momentId, ch.id, comment.slice(0, 500));
+          // other characters "see" this comment in the shared feed → memory
+          recordMomentObservation(dbPath, { momentText: text, actorId: ch.id, actorName: ch.name, commentText: comment });
         } catch {}
       }
     } catch {
@@ -285,6 +313,7 @@ async function reactToComment(dbPath, momentId, userCommentText, momentAuthorId)
               "这是手机上的朋友圈评论区。用户刚回复了你们的评论区。",
               "用你的语气自然地接一句——简短，像真人随手回的那种。不要解释，不要说废话。",
               "如果你觉得没必要回就别回，输出空字符串。",
+              MOMENT_CHANNEL_RULE,
               '严格输出 JSON：{"reply": "你的回复内容或空字符串"}',
             ].join("\n"),
           },
@@ -303,6 +332,7 @@ async function reactToComment(dbPath, momentId, userCommentText, momentAuthorId)
           db.prepare(
             "INSERT INTO ownwe_moment_comments (moment_id, author_type, author_id, text, reply_to_name) VALUES (?, 'char', ?, ?, ?)"
           ).run(momentId, ch.id, reply.slice(0, 500), "我");
+          recordMomentObservation(dbPath, { momentText, actorId: ch.id, actorName: ch.name, commentText: reply });
         }
       } catch {}
     }

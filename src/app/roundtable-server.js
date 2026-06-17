@@ -856,6 +856,15 @@ class RoundtableServer {
         this.sendJson(res, 200, { roomId, mode });
         return;
       }
+      case "/api/ownwe/open-character": {
+        // Open (or create) a dedicated 1-on-1 conversation with a character
+        const charId = normalizeText(body.characterId || body.charId);
+        const character = charId ? getCharacter(this.config.dbPath, charId) : null;
+        if (!character) { this.sendJson(res, 404, { error: "character not found" }); return; }
+        this.openCharacterChat(character);
+        this.sendJson(res, 200, this.snapshot());
+        return;
+      }
       case "/api/ownwe/user-base/save": {
         this.sendJson(res, 200, upsertUserBase(this.config.dbPath, body || {}));
         return;
@@ -902,7 +911,8 @@ class RoundtableServer {
   }
 
   serveStatic(req, res, requestUrl) {
-    const safePath = requestUrl.pathname === "/" ? "/index.html" : requestUrl.pathname;
+    // OwnWe is the default experience; the classic Roundtable UI stays at /index.html
+    const safePath = requestUrl.pathname === "/" ? "/ownwe.html" : requestUrl.pathname;
     const decoded = decodeURIComponent(safePath);
     const filePath = path.resolve(this.publicDir, "." + decoded);
     if (!filePath.startsWith(this.publicDir)) {
@@ -916,7 +926,7 @@ class RoundtableServer {
         res.end("Not found");
         return;
       }
-        const isHotAppAsset = filePath.endsWith("index.html") || filePath.endsWith(`${path.sep}app.js`) || filePath.endsWith(`${path.sep}styles.css`);
+        const isHotAppAsset = filePath.endsWith("index.html") || filePath.endsWith("ownwe.html") || filePath.endsWith(`${path.sep}app.js`) || filePath.endsWith(`${path.sep}styles.css`);
         res.writeHead(200, {
           "Content-Type": contentTypeFor(filePath),
           "Cache-Control": isHotAppAsset ? "no-store" : "public, max-age=3600",
@@ -1463,6 +1473,34 @@ class RoundtableServer {
       draft.directChats = chats;
       return draft;
     });
+  }
+
+  // OwnWe: open/create a dedicated 1-on-1 topic for a character and bind it
+  // to the 'claude' speaker slot so that slot replies with the character's persona.
+  openCharacterChat(character) {
+    const speaker = "claude";
+    const title = `OwnWe·${character.name || character.id}`;
+    let topicId = "";
+    this.autoRunToken += 1;
+    this.store.update((draft) => {
+      topicId = openOrCreateBoundTopic(draft, {
+        topicTitle: title,
+        container: { type: "direct_chat", id: `ownwe-${character.id}`, title: character.name || "角色" },
+        systemLabel: `进入与「${character.name || "角色"}」的单聊。`,
+      });
+      return draft;
+    });
+    try {
+      const db = require("../db/connection").getDb(this.config.dbPath);
+      db.prepare(`
+        INSERT INTO ownwe_character_bindings (topic_id, speaker, character_id)
+        VALUES (?, ?, ?)
+        ON CONFLICT(topic_id, speaker) DO UPDATE SET character_id = excluded.character_id, bound_at = datetime('now')
+      `).run(topicId, speaker, character.id);
+    } catch (err) {
+      console.warn("[ownwe] openCharacterChat bind failed:", err.message);
+    }
+    return topicId;
   }
 
   openProject(body = {}) {
@@ -2054,8 +2092,9 @@ class RoundtableServer {
 
   scheduleReplies(body = {}) {
     let replyBody = withResolvedReplyTarget(body);
-    // OwnWe: if no explicit target, classify and set target + mode
-    if (!normalizeSpeakerTarget(replyBody.target)) {
+    // OwnWe: always compute A/B mode (even when the speaker is forced, e.g. 1-on-1
+    // character chats), but only override the target when none was provided.
+    {
       const text = normalizeText(body.text || body.message || "");
       // §3.5: read the per-room manual pin (empty = let the classifier decide)
       let pinnedMode = "";
@@ -2069,13 +2108,14 @@ class RoundtableServer {
         pinnedMode = this._ownweRoomMode || "";
       }
       const result = classify(text, { pinnedMode });
+      const hadTarget = Boolean(normalizeSpeakerTarget(replyBody.target));
       replyBody = {
         ...replyBody,
-        target: result.speaker === "tool" ? "codex" : "claude",
+        target: hadTarget ? replyBody.target : (result.speaker === "tool" ? "codex" : "claude"),
         ownweMode: result.mode,
         ownweClassifier: result,
       };
-      console.log(`[ownwe] classify mode=${result.mode} speaker=${result.speaker} confidence=${result.confidence.toFixed(2)}`);
+      console.log(`[ownwe] classify mode=${result.mode} speaker=${replyBody.target} confidence=${result.confidence.toFixed(2)} forced=${hadTarget}`);
     }
     setImmediate(() => {
       try {

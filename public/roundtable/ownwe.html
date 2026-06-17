@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0f">
+<title>OwnWe</title>
+<style>
+  :root {
+    --bg: #0d0d0f;
+    --sidebar: #161618;
+    --list: #1b1b1e;
+    --list-active: #2a2a2f;
+    --chat-bg: #0f0f11;
+    --ink: #ebe7e0;
+    --ink-2: #9b948a;
+    --line: rgba(255,255,255,.08);
+    --me: #3a5a40;        /* my bubble — muted green */
+    --me-ink: #eafff0;
+    --them: #242427;      /* their bubble */
+    --them-ink: #ebe7e0;
+    --accent: #7eb8f7;
+    --danger: #d97d7d;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", system-ui, sans-serif;
+    background: var(--bg); color: var(--ink); font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { display: grid; grid-template-columns: 300px 1fr; height: 100vh; }
+
+  /* ── Sidebar ── */
+  .sidebar { background: var(--sidebar); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .side-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 16px 12px; flex-shrink: 0;
+  }
+  .side-head h1 { font-size: 17px; margin: 0; letter-spacing: .5px; }
+  .side-head .add-btn {
+    width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line);
+    background: transparent; color: var(--ink); font-size: 18px; cursor: pointer; line-height: 1;
+  }
+  .side-head .add-btn:hover { background: var(--list-active); }
+  .contacts { flex: 1; overflow-y: auto; min-height: 0; }
+  .contact {
+    display: flex; align-items: center; gap: 12px; padding: 11px 16px; cursor: pointer;
+    border-left: 3px solid transparent;
+  }
+  .contact:hover { background: var(--list); }
+  .contact.active { background: var(--list-active); border-left-color: var(--accent); }
+  .avatar {
+    width: 42px; height: 42px; border-radius: 10px; flex-shrink: 0;
+    display: grid; place-items: center; font-size: 22px; background: #2c2c31;
+  }
+  .contact-info { flex: 1; min-width: 0; }
+  .contact-info .name { font-size: 15px; }
+  .contact-info .sub { font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .contacts-empty { color: var(--ink-2); font-size: 13px; padding: 20px 16px; line-height: 1.7; }
+  .side-foot { flex-shrink: 0; border-top: 1px solid var(--line); padding: 10px 16px; display: flex; gap: 14px; }
+  .side-foot button { background: none; border: none; color: var(--ink-2); cursor: pointer; font-size: 13px; padding: 4px; }
+  .side-foot button:hover { color: var(--ink); }
+
+  /* ── Chat ── */
+  .chat { display: flex; flex-direction: column; background: var(--chat-bg); min-width: 0; min-height: 0; }
+  .chat-head { padding: 16px 22px; border-bottom: 1px solid var(--line); flex-shrink: 0; font-size: 16px; }
+  .chat-head .status { font-size: 12px; color: var(--ink-2); margin-left: 8px; }
+  .messages { flex: 1; overflow-y: auto; padding: 22px; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+  .placeholder { margin: auto; color: var(--ink-2); text-align: center; line-height: 2; }
+  .placeholder .big { font-size: 40px; opacity: .5; }
+
+  .row { display: flex; gap: 10px; align-items: flex-start; max-width: 72%; }
+  .row.them { align-self: flex-start; }
+  .row.me { align-self: flex-end; flex-direction: row-reverse; }
+  .row .av { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; display: grid; place-items: center; font-size: 18px; background: #2c2c31; }
+  .bubble { padding: 9px 13px; border-radius: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+  .row.them .bubble { background: var(--them); color: var(--them-ink); border-top-left-radius: 4px; }
+  .row.me .bubble { background: var(--me); color: var(--me-ink); border-top-right-radius: 4px; }
+  .sys-note { align-self: center; color: var(--ink-2); font-size: 12px; background: rgba(255,255,255,.04); padding: 4px 12px; border-radius: 10px; }
+  .typing { color: var(--ink-2); font-size: 13px; font-style: italic; }
+
+  /* ── Composer ── */
+  .composer { border-top: 1px solid var(--line); padding: 14px 18px; flex-shrink: 0; }
+  .composer textarea {
+    width: 100%; resize: none; min-height: 46px; max-height: 140px;
+    background: var(--list); border: 1px solid var(--line); border-radius: 12px;
+    color: var(--ink); padding: 12px 14px; font-family: inherit; font-size: 15px; line-height: 1.5;
+  }
+  .composer textarea:disabled { opacity: .5; }
+  .composer-row { display: flex; justify-content: flex-end; margin-top: 8px; }
+  .send-btn { padding: 7px 22px; border-radius: 9px; border: none; background: var(--me); color: var(--me-ink); cursor: pointer; font-size: 14px; }
+  .send-btn:disabled { opacity: .4; cursor: default; }
+
+  /* ── Modal ── */
+  dialog { background: var(--sidebar); color: var(--ink); border: 1px solid var(--line); border-radius: 16px; padding: 0; width: min(560px, 94vw); }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  .modal-body { padding: 22px; display: flex; flex-direction: column; gap: 14px; max-height: 86vh; overflow-y: auto; }
+  .modal-body h3 { margin: 0; }
+  .modal-body label span { display: block; font-size: 12px; color: var(--ink-2); margin-bottom: 5px; }
+  .modal-body input, .modal-body textarea, .modal-body select {
+    width: 100%; padding: 9px 11px; border-radius: 9px; box-sizing: border-box;
+    background: var(--list); border: 1px solid var(--line); color: var(--ink); font-family: inherit; font-size: 14px;
+  }
+  .modal-body textarea { resize: vertical; min-height: 160px; line-height: 1.55; }
+  .modal-row { display: flex; gap: 10px; }
+  .modal-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .btn { padding: 8px 16px; border-radius: 9px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer; font-size: 14px; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #08121f; }
+  .btn.danger { border-color: var(--danger); color: var(--danger); }
+  .grow { flex: 1; }
+
+  @media (max-width: 720px) {
+    .app { grid-template-columns: 1fr; }
+    .app.chatting .sidebar { display: none; }
+    .app:not(.chatting) .chat { display: none; }
+    .row { max-width: 84%; }
+    .chat-head .back { display: inline-block; margin-right: 10px; cursor: pointer; color: var(--accent); }
+  }
+  .chat-head .back { display: none; }
+</style>
+</head>
+<body>
+  <div class="app" id="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="side-head">
+        <h1>OwnWe</h1>
+        <button class="add-btn" id="addCharBtn" title="新建角色">＋</button>
+      </div>
+      <div class="contacts" id="contacts">
+        <div class="contacts-empty">还没有角色。<br>点右上角 ＋ 新建一个，<br>就能开始聊天。</div>
+      </div>
+      <div class="side-foot">
+        <button id="openProfileBtn">用户百科</button>
+      </div>
+    </aside>
+
+    <!-- Chat -->
+    <section class="chat">
+      <div class="chat-head" id="chatHead">
+        <span class="back" id="backBtn">‹ 返回</span>
+        <span id="chatTitle">选择一个角色开始聊天</span>
+        <span class="status" id="chatStatus"></span>
+      </div>
+      <div class="messages" id="messages">
+        <div class="placeholder"><div class="big">☾</div>左边选一个角色，<br>或新建一个。</div>
+      </div>
+      <div class="composer" id="composer" style="display:none">
+        <textarea id="input" placeholder="说点什么…（Enter 发送，Shift+Enter 换行）"></textarea>
+        <div class="composer-row"><button class="send-btn" id="sendBtn">发送</button></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Character editor -->
+  <dialog id="charDialog">
+    <form class="modal-body" id="charForm" method="dialog">
+      <h3 id="charDialogTitle">新建角色</h3>
+      <input type="hidden" id="cId">
+      <div class="modal-row">
+        <label style="flex:0 0 70px"><span>头像</span><input id="cEmoji" maxlength="2" placeholder="🙂" style="text-align:center"></label>
+        <label class="grow"><span>名字</span><input id="cName" placeholder="如：尤金" required></label>
+      </div>
+      <label><span>人格 Prompt（粘贴你写的角色设定，越详细越好）</span>
+        <textarea id="cPersona" placeholder="你叫…，你的说话风格…，你和我的关系…"></textarea></label>
+      <div class="modal-row">
+        <label class="grow"><span>模型来源</span>
+          <select id="cProvider">
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="openai">OpenAI</option>
+            <option value="gemini">Gemini</option>
+            <option value="kimi">Kimi</option>
+          </select></label>
+        <label class="grow"><span>模型（留空用默认）</span><input id="cModel" placeholder="claude-sonnet-4-6"></label>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn danger" id="cDelete" style="visibility:hidden">删除</button>
+        <div style="display:flex;gap:10px">
+          <button type="button" class="btn" id="cCancel">取消</button>
+          <button type="submit" class="btn primary">保存</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- User base editor -->
+  <dialog id="profileDialog">
+    <form class="modal-body" id="profileForm" method="dialog">
+      <h3>用户百科（所有角色共享的客观信息）</h3>
+      <div class="modal-row">
+        <label class="grow"><span>年龄</span><input id="pAge"></label>
+        <label class="grow"><span>性别</span><input id="pGender"></label>
+        <label class="grow"><span>MBTI</span><input id="pMbti"></label>
+      </div>
+      <div class="modal-row">
+        <label class="grow"><span>城市</span><input id="pCity"></label>
+        <label class="grow"><span>专业</span><input id="pMajor"></label>
+        <label class="grow"><span>年级/阶段</span><input id="pGrade"></label>
+      </div>
+      <label><span>行业（逗号分隔）</span><input id="pIndustries"></label>
+      <div class="modal-foot">
+        <span></span>
+        <div style="display:flex;gap:10px">
+          <button type="button" class="btn" id="pCancel">关闭</button>
+          <button type="submit" class="btn primary">保存</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const api = (path, body) => fetch(path, body
+  ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+  : undefined).then((r) => r.json());
+
+let characters = [];
+let activeCharId = null;
+let pollTimer = null;
+let lastRenderKey = "";
+
+function esc(s) { return String(s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
+
+// ── Contacts ──────────────────────────────────────────────────────────────
+async function loadContacts() {
+  characters = await api("/api/ownwe/characters");
+  const box = $("contacts");
+  if (!characters.length) {
+    box.innerHTML = '<div class="contacts-empty">还没有角色。<br>点右上角 ＋ 新建一个。</div>';
+    return;
+  }
+  box.innerHTML = characters.map((c) => `
+    <div class="contact ${c.id === activeCharId ? "active" : ""}" data-id="${c.id}">
+      <div class="avatar">${c.avatar_emoji || "🙂"}</div>
+      <div class="contact-info">
+        <div class="name">${esc(c.name)}</div>
+        <div class="sub">${esc(c.codename || providerLabel(c.provider))}</div>
+      </div>
+    </div>`).join("");
+  box.querySelectorAll(".contact").forEach((el) => {
+    el.addEventListener("click", () => openChat(el.dataset.id));
+    el.addEventListener("dblclick", () => editChar(el.dataset.id));
+  });
+}
+function providerLabel(p) {
+  return ({ anthropic: "Claude", deepseek: "DeepSeek", openai: "OpenAI", gemini: "Gemini", kimi: "Kimi" })[p] || "";
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────
+async function openChat(charId) {
+  activeCharId = charId;
+  const c = characters.find((x) => x.id === charId);
+  document.querySelectorAll(".contact").forEach((el) => el.classList.toggle("active", el.dataset.id === charId));
+  $("app").classList.add("chatting");
+  $("chatTitle").textContent = c ? `${c.avatar_emoji || ""} ${c.name}` : "";
+  $("composer").style.display = "";
+  $("messages").innerHTML = '<div class="placeholder">正在进入…</div>';
+  const snap = await api("/api/ownwe/open-character", { characterId: charId });
+  renderMessages(snap, true);
+  startPolling();
+  $("input").focus();
+}
+
+function renderMessages(snap, force) {
+  const msgs = (snap.messages || []).filter((m) => ["user", "claude", "system"].includes(m.speaker));
+  const running = snap.running || msgs.some((m) => m.speaker === "claude" && m.pending);
+  const key = msgs.map((m) => m.id + ":" + (m.text || "").length + ":" + (m.pending ? 1 : 0)).join("|") + ":" + running;
+  if (!force && key === lastRenderKey) return;
+  lastRenderKey = key;
+
+  const c = characters.find((x) => x.id === activeCharId);
+  const av = c ? (c.avatar_emoji || "🙂") : "🙂";
+  const box = $("messages");
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+
+  let html = "";
+  for (const m of msgs) {
+    if (m.speaker === "system") {
+      if (m.transcript === false || /injected|context/i.test(m.text || "")) continue;
+      html += `<div class="sys-note">${esc(m.text)}</div>`;
+    } else if (m.speaker === "user") {
+      html += `<div class="row me"><div class="av">我</div><div class="bubble">${esc(m.text)}</div></div>`;
+    } else {
+      const txt = m.text ? esc(m.text) : '<span class="typing">正在输入…</span>';
+      html += `<div class="row them"><div class="av">${av}</div><div class="bubble">${txt}</div></div>`;
+    }
+  }
+  if (running && !msgs.some((m) => m.speaker === "claude" && m.pending && !m.text)) {
+    html += `<div class="row them"><div class="av">${av}</div><div class="bubble"><span class="typing">正在输入…</span></div></div>`;
+  }
+  box.innerHTML = html || '<div class="placeholder">打个招呼吧 👋</div>';
+  $("chatStatus").textContent = running ? "对方正在输入…" : "";
+  if (atBottom || force) box.scrollTop = box.scrollHeight;
+}
+
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(async () => {
+    try {
+      const snap = await fetch("/api/state").then((r) => r.json());
+      renderMessages(snap, false);
+    } catch (e) {}
+  }, 1300);
+}
+function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
+
+async function send() {
+  const input = $("input");
+  const text = input.value.trim();
+  if (!text || !activeCharId) return;
+  input.value = "";
+  // optimistic
+  const box = $("messages");
+  box.insertAdjacentHTML("beforeend", `<div class="row me"><div class="av">我</div><div class="bubble">${esc(text)}</div></div>`);
+  box.scrollTop = box.scrollHeight;
+  lastRenderKey = "";
+  try {
+    await fetch("/api/user", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, target: "claude" }),
+    });
+  } catch (e) { alert("发送失败：" + e.message); }
+}
+
+$("sendBtn").addEventListener("click", send);
+$("input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+});
+$("backBtn").addEventListener("click", () => { $("app").classList.remove("chatting"); stopPolling(); });
+
+// ── Character editor ────────────────────────────────────────────────────────
+function openCharDialog(c) {
+  $("charDialogTitle").textContent = c ? "编辑角色" : "新建角色";
+  $("cId").value = c?.id || "";
+  $("cEmoji").value = c?.avatar_emoji || "";
+  $("cName").value = c?.name || "";
+  $("cPersona").value = c?.persona_prompt || "";
+  $("cProvider").value = c?.provider || "anthropic";
+  $("cModel").value = c?.model || "";
+  $("cDelete").style.visibility = c ? "visible" : "hidden";
+  $("charDialog").showModal();
+}
+function editChar(id) { openCharDialog(characters.find((c) => c.id === id)); }
+$("addCharBtn").addEventListener("click", () => openCharDialog(null));
+$("cCancel").addEventListener("click", () => $("charDialog").close());
+$("charForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await api("/api/ownwe/characters/upsert", {
+    id: $("cId").value || undefined,
+    avatar_emoji: $("cEmoji").value || "🙂",
+    name: $("cName").value.trim(),
+    persona_prompt: $("cPersona").value,
+    provider: $("cProvider").value,
+    model: $("cModel").value.trim(),
+  });
+  $("charDialog").close();
+  await loadContacts();
+});
+$("cDelete").addEventListener("click", async () => {
+  const id = $("cId").value;
+  if (!id || !confirm("确认删除这个角色？")) return;
+  await api("/api/ownwe/characters/delete", { id });
+  $("charDialog").close();
+  if (activeCharId === id) { activeCharId = null; $("app").classList.remove("chatting"); stopPolling(); }
+  await loadContacts();
+});
+
+// ── User base ────────────────────────────────────────────────────────────────
+$("openProfileBtn").addEventListener("click", async () => {
+  const b = await fetch("/api/ownwe/user-base").then((r) => r.json());
+  $("pAge").value = b.age || ""; $("pGender").value = b.gender || ""; $("pMbti").value = b.mbti || "";
+  $("pCity").value = b.city || ""; $("pMajor").value = b.major || ""; $("pGrade").value = b.grade || "";
+  $("pIndustries").value = (b.industries || []).join(", ");
+  $("profileDialog").showModal();
+});
+$("pCancel").addEventListener("click", () => $("profileDialog").close());
+$("profileForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await api("/api/ownwe/user-base/save", {
+    age: $("pAge").value.trim(), gender: $("pGender").value.trim(), mbti: $("pMbti").value.trim(),
+    city: $("pCity").value.trim(), major: $("pMajor").value.trim(), grade: $("pGrade").value.trim(),
+    industries: $("pIndustries").value.split(/[,，]/).map((s) => s.trim()).filter(Boolean),
+  });
+  $("profileDialog").close();
+});
+
+loadContacts();
+</script>
+</body>
+</html>

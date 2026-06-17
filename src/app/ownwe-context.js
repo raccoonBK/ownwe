@@ -247,8 +247,11 @@ function buildOwnWeContext({ character, memories = [], transcript = "", mode = "
 
   const currentTime = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
 
+  // Time sense — what time it is + how long since you last talked (§0 拟人)
+  const timeNote = buildTimeNote(relationshipState);
+
   // 画像 block — this character's own picture of the user, woven in as intuition
-  const personaWithProfile = [character.persona_prompt || "", modeNote, profileBlock]
+  const personaWithProfile = [character.persona_prompt || "", modeNote, timeNote, profileBlock]
     .filter(Boolean)
     .join("\n\n");
 
@@ -265,6 +268,43 @@ function buildOwnWeContext({ character, memories = [], transcript = "", mode = "
       : "")
     .replace("{{TRANSCRIPT}}", transcript || "（暂无对话记录）")
     .trim();
+}
+
+// Build a natural time-awareness note: time of day + gap since last talk.
+// The character should *feel* the time, not announce it like a clock.
+function buildTimeNote(relationshipState) {
+  const now = new Date();
+  const shanghai = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Shanghai" }));
+  const h = shanghai.getHours();
+  const weekday = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][shanghai.getDay()];
+  const hhmm = `${String(shanghai.getHours()).padStart(2, "0")}:${String(shanghai.getMinutes()).padStart(2, "0")}`;
+
+  let partOfDay;
+  if (h >= 5 && h < 8) partOfDay = "清晨";
+  else if (h >= 8 && h < 11) partOfDay = "上午";
+  else if (h >= 11 && h < 13) partOfDay = "中午";
+  else if (h >= 13 && h < 17) partOfDay = "下午";
+  else if (h >= 17 && h < 19) partOfDay = "傍晚";
+  else if (h >= 19 && h < 23) partOfDay = "晚上";
+  else partOfDay = "深夜";
+
+  // gap since last interaction
+  let gapPhrase = "";
+  const lastIso = relationshipState?.last_interaction_at || "";
+  if (lastIso) {
+    const last = Date.parse(lastIso);
+    if (Number.isFinite(last)) {
+      const gapH = (now.getTime() - last) / 3_600_000;
+      if (gapH < 0.5) gapPhrase = "你们刚还在聊。";
+      else if (gapH < 6) gapPhrase = "今天稍早聊过。";
+      else if (gapH < 24) gapPhrase = "上次说话是几小时前。";
+      else if (gapH < 72) gapPhrase = "有一两天没联系了。";
+      else if (gapH < 24 * 14) gapPhrase = "好些天没联系了。";
+      else gapPhrase = "已经很久没联系了。";
+    }
+  }
+
+  return `【现在是${weekday} ${partOfDay}（${hhmm}）。${gapPhrase}自然地感知时间——比如深夜了可以顺口提一句、很久没联系可以有点感触——但别像报时器一样念时间。】`;
 }
 
 function formatMemoryAsIntuition(memory) {

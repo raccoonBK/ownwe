@@ -40,6 +40,7 @@ const {
   createMoment,
   toggleLike,
   addComment,
+  reactToMoment,
 } = require("./ownwe-moments");
 const {
   RoundtableCheckinPoller,
@@ -878,8 +879,11 @@ class RoundtableServer {
       case "/api/ownwe/moments/post": {
         const text = normalizeText(body.text);
         if (!text) { this.sendJson(res, 400, { error: "text required" }); return; }
-        createMoment(this.config.dbPath, { authorType: "user", authorId: "self", text });
+        const momentId = createMoment(this.config.dbPath, { authorType: "user", authorId: "self", text });
         this.sendJson(res, 200, { ok: true });
+        // characters react in the background (§5.4 / §11)
+        reactToMoment(this.config.dbPath, momentId, text).catch((err) =>
+          console.warn("[ownwe] moment reactions failed:", err.message));
         return;
       }
       case "/api/ownwe/moments/like": {

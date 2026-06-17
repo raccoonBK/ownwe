@@ -411,8 +411,13 @@ async function loadMoments() {
 $("momentPost").addEventListener("click", async () => {
   const text = $("momentInput").value.trim();
   if (!text) return;
+  $("momentPost").disabled = true;
   await api("/api/ownwe/moments/post", { text });
-  $("momentInput").value = ""; loadMoments();
+  $("momentInput").value = "";
+  loadMoments();
+  // characters react in the background — refresh a couple times to catch likes/comments
+  setTimeout(loadMoments, 4000);
+  setTimeout(() => { loadMoments(); $("momentPost").disabled = false; }, 9000);
 });
 function fmtTime(iso) {
   const d = new Date((iso || "").replace(" ", "T") + (iso && iso.includes("Z") ? "" : "Z"));

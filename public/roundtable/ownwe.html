@@ -481,11 +481,29 @@ async function openGroupChat(groupId) {
   $("input").focus();
 }
 
-// ── Narration folding ─────────────────────────────────────────────────────
-// （动作/心理描写） and *动作* get collapsed into a tiny toggle by default.
+// ── Narration folding / dialogue extraction ──────────────────────────────────
+// If the AI wrapped dialogue in "..." (double quotes), extract only those parts
+// and show them clean — strip the surrounding narration entirely.
+// If no quotes found, fall back to collapsing （...） and *...* into a toggle.
 const NARR_RE = /(（[^）\n]{1,300}）|\*[^*\n]{1,300}\*)/g;
+const QUOTE_RE = /"([^"\n]{1,500})"/g;
+
 function renderBubbleHtml(text) {
   if (!text) return "";
+
+  // Priority: extract text inside "..." and show only those parts (no quotes shown)
+  const quoted = [];
+  QUOTE_RE.lastIndex = 0;
+  let qm;
+  while ((qm = QUOTE_RE.exec(text)) !== null) {
+    const part = qm[1].trim();
+    if (part) quoted.push(part);
+  }
+  if (quoted.length) {
+    return esc(quoted.join("\n"));
+  }
+
+  // Fallback: collapse （action） and *action* into a small toggle
   let result = "", last = 0;
   NARR_RE.lastIndex = 0;
   let m;

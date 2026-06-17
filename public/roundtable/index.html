@@ -8,6 +8,15 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/icon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/styles.css??v=mobile-nav-overlay-5">
+    <script>
+      // Apply saved theme before first paint to avoid a flash.
+      (function () {
+        try {
+          var t = localStorage.getItem("ownwe_theme") || "light";
+          if (t === "dark") document.documentElement.setAttribute("data-theme", "dark");
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div class="bg-grid" aria-hidden="true"></div>
@@ -55,6 +64,7 @@
         </button>
 
         <div class="rail-spacer"></div>
+        <button id="themeToggle" class="rail-theme-toggle" type="button" title="切换深色 / 浅色" aria-label="切换主题">🌙</button>
         <button class="rail-btn" type="button" data-view="characters" title="角色管理">
           <span>⌁</span>
           <small>角色</small>
@@ -1060,34 +1070,54 @@
       // Refresh the pin display on load and whenever the chat tab is reopened.
       refreshModePin();
       document.querySelector('[data-view="chat"]')?.addEventListener("click", refreshModePin);
+
+      // ── Theme toggle (dark / light) ────────────────────────────────────────
+      const themeToggle = $("themeToggle");
+      function applyThemeIcon() {
+        const dark = document.documentElement.getAttribute("data-theme") === "dark";
+        if (themeToggle) themeToggle.textContent = dark ? "☀️" : "🌙";
+      }
+      applyThemeIcon();
+      themeToggle?.addEventListener("click", () => {
+        const dark = document.documentElement.getAttribute("data-theme") === "dark";
+        if (dark) {
+          document.documentElement.removeAttribute("data-theme");
+          try { localStorage.setItem("ownwe_theme", "light"); } catch (e) {}
+        } else {
+          document.documentElement.setAttribute("data-theme", "dark");
+          try { localStorage.setItem("ownwe_theme", "dark"); } catch (e) {}
+        }
+        applyThemeIcon();
+      });
     })();
     </script>
 
     <style>
-    /* OwnWe character panel styles */
+    /* OwnWe character panel styles — use the app's own theme tokens */
     .characters-panel { padding: 1rem; overflow-y: auto; }
     .characters-list { display: flex; flex-direction: column; gap: .75rem; margin-top: 1rem; }
     .char-card {
       display: flex; align-items: center; gap: .75rem;
-      padding: .75rem 1rem; border-radius: 10px;
-      background: var(--surface, #1e1e1e); border: 1px solid var(--border, #333);
+      padding: .75rem 1rem; border-radius: 12px;
+      background: var(--paper); border: 1px solid var(--line);
     }
     .char-avatar { font-size: 1.6rem; flex-shrink: 0; }
     .char-info { flex: 1; min-width: 0; }
-    .char-info strong { display: block; }
-    .char-info small { color: var(--text-muted, #888); font-size: .8rem; }
+    .char-info strong { display: block; color: var(--ink); }
+    .char-info small { color: var(--ink-2); font-size: .8rem; }
     .char-actions { display: flex; gap: .4rem; flex-shrink: 0; }
-    .btn-sm { padding: .25rem .6rem; font-size: .78rem; border-radius: 6px; border: 1px solid var(--border, #444); background: transparent; color: inherit; cursor: pointer; }
-    .btn-sm:hover { background: var(--hover, #2a2a2a); }
-    .empty-hint { color: var(--text-muted, #888); font-size: .9rem; }
+    .btn-sm { padding: .25rem .6rem; font-size: .78rem; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer; }
+    .btn-sm:hover { background: var(--paper-soft); }
+    .empty-hint { color: var(--ink-2); font-size: .9rem; }
 
-    /* Character dialog */
+    /* Character / bind dialogs */
     .character-dialog, .bind-dialog {
-      background: var(--bg, #141414); color: inherit;
-      border: 1px solid var(--border, #333); border-radius: 14px;
+      background: var(--paper-strong); color: var(--ink);
+      border: 1px solid var(--line); border-radius: 16px;
       padding: 0; width: min(600px, 96vw); max-height: 90vh; overflow: hidden;
+      box-shadow: var(--shadow);
     }
-    .character-dialog::backdrop, .bind-dialog::backdrop { background: rgba(0,0,0,.55); }
+    .character-dialog::backdrop, .bind-dialog::backdrop { background: rgba(0,0,0,.45); }
     .character-form, .bind-form {
       display: flex; flex-direction: column; gap: .85rem;
       padding: 1.4rem; overflow-y: auto; max-height: 90vh;
@@ -1095,12 +1125,13 @@
     .character-form header, .bind-form header {
       display: flex; align-items: center; justify-content: space-between;
     }
-    .character-form label span, .bind-form label span { display: block; font-size: .8rem; color: var(--text-muted, #888); margin-bottom: .3rem; }
+    .character-form header h3, .bind-form header h3 { color: var(--ink); margin: 0; }
+    .character-form label span, .bind-form label span { display: block; font-size: .8rem; color: var(--ink-2); margin-bottom: .3rem; }
     .character-form input, .character-form textarea, .character-form select,
     .bind-form input, .bind-form select {
       width: 100%; padding: .5rem .7rem; border-radius: 8px;
-      border: 1px solid var(--border, #444); background: var(--surface, #1e1e1e);
-      color: inherit; font-size: .9rem; font-family: inherit; box-sizing: border-box;
+      border: 1px solid var(--line); background: var(--paper-soft);
+      color: var(--ink); font-size: .9rem; font-family: inherit; box-sizing: border-box;
     }
     .character-form textarea { resize: vertical; }
     .char-form-row { display: flex; gap: .7rem; }
@@ -1109,20 +1140,25 @@
     .character-form footer, .bind-form footer {
       display: flex; gap: .5rem; justify-content: flex-end; padding-top: .5rem;
     }
-    .button { padding: .45rem 1rem; border-radius: 8px; border: 1px solid var(--border, #444); background: transparent; color: inherit; cursor: pointer; font-size: .9rem; }
-    .button.primary { background: var(--accent, #4a6fa5); border-color: var(--accent, #4a6fa5); color: #fff; }
-    .button.danger { border-color: #c0392b; color: #c0392b; }
-    .button:hover { opacity: .85; }
+    .character-dialog .button, .bind-dialog .button {
+      padding: .45rem 1rem; border-radius: 8px; border: 1px solid var(--line);
+      background: transparent; color: var(--ink); cursor: pointer; font-size: .9rem;
+    }
+    .character-dialog .button.primary, .bind-dialog .button.primary {
+      background: var(--codex); border-color: var(--codex); color: #fff;
+    }
+    .character-dialog .button.danger { border-color: var(--danger); color: var(--danger); }
+    .character-dialog .button:hover, .bind-dialog .button:hover { opacity: .85; }
 
     /* OwnWe mode pin (A/B/auto) */
-    .ownwe-mode-pin { display: inline-flex; border: 1px solid var(--border, #444); border-radius: 8px; overflow: hidden; }
+    .ownwe-mode-pin { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
     .ownwe-mode-btn {
       padding: .3rem .6rem; font-size: .78rem; border: none; background: transparent;
-      color: var(--text-muted, #999); cursor: pointer; border-right: 1px solid var(--border, #444);
+      color: var(--ink-2); cursor: pointer; border-right: 1px solid var(--line);
     }
     .ownwe-mode-btn:last-child { border-right: none; }
-    .ownwe-mode-btn.active { background: var(--accent, #4a6fa5); color: #fff; }
-    .ownwe-mode-btn:not(.active):hover { background: var(--hover, #2a2a2a); }
+    .ownwe-mode-btn.active { background: var(--codex); color: #fff; }
+    .ownwe-mode-btn:not(.active):hover { background: var(--paper-soft); }
     </style>
   </body>
 </html>

@@ -4385,3 +4385,49 @@ button.message-menu-button {
   overflow-wrap: anywhere;
   background: rgba(255,253,248,.72);
 }
+
+/* ───────────────────────────────────────────────────────────────────
+   Dark theme — activated by <html data-theme="dark">.
+   Overrides the semantic tokens only, so every component follows along.
+   ─────────────────────────────────────────────────────────────────── */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0e0d12;
+  --paper: rgba(28, 28, 36, .72);
+  --paper-strong: rgba(32, 32, 42, .94);
+  --paper-soft: rgba(255, 255, 255, .04);
+  --ink: #e8e4dc;
+  --ink-2: #a39c92;
+  --muted: #7c7468;
+  --line: rgba(235, 230, 220, .14);
+  --line-soft: rgba(235, 230, 220, .07);
+  --codex: #8fb0c9;
+  --codex-dim: rgba(143, 176, 201, .15);
+  --claude: #d29a82;
+  --claude-dim: rgba(210, 154, 130, .16);
+  --deepseek: #a99fce;
+  --deepseek-dim: rgba(169, 159, 206, .15);
+  --gemini: #5bbCa6;
+  --gemini-dim: rgba(91, 188, 166, .15);
+  --user: #b6a89a;
+  --user-dim: rgba(182, 168, 154, .12);
+  --summary: #c0a98f;
+  --summary-dim: rgba(192, 169, 143, .14);
+  --danger: #d97d7d;
+  --danger-dim: rgba(217, 125, 125, .14);
+  --shadow: 0 22px 70px rgba(0, 0, 0, .45);
+  --shadow-soft: 0 10px 36px rgba(0, 0, 0, .32);
+}
+
+/* Theme toggle button in the rail */
+.rail-theme-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 18px;
+  padding: 6px;
+  border-radius: 10px;
+  transition: background .15s, color .15s;
+}
+.rail-theme-toggle:hover { background: var(--paper-soft); color: var(--ink); }

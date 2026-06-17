@@ -490,6 +490,22 @@ class RoundtableServer {
     return { id, name, charIds, avatarEmoji: emoji };
   }
 
+  addMembersToGroup(body = {}) {
+    const groupId = normalizeText(body.groupId);
+    const newCharIds = Array.isArray(body.charIds) ? body.charIds.filter(Boolean) : [];
+    if (!groupId) throw new Error("groupId required");
+    if (!newCharIds.length) throw new Error("charIds required");
+    const db = require("../db/connection").getDb(this.config.dbPath);
+    const group = db.prepare("SELECT * FROM ownwe_groups WHERE id = ?").get(groupId);
+    if (!group) throw new Error("group not found");
+    const existing = JSON.parse(group.char_ids || "[]");
+    const merged = [...new Set([...existing, ...newCharIds])];
+    db.prepare("UPDATE ownwe_groups SET char_ids = ? WHERE id = ?").run(
+      JSON.stringify(merged), groupId
+    );
+    return { id: groupId, charIds: merged };
+  }
+
   openGroupChat(groupId) {
     const db = require("../db/connection").getDb(this.config.dbPath);
     const group = db.prepare("SELECT * FROM ownwe_groups WHERE id = ?").get(groupId);
@@ -505,12 +521,16 @@ class RoundtableServer {
         container: { type: "direct_chat", id: groupId, title: group.name },
         systemLabel: `进入群聊「${group.name}」。`,
       });
-      // Same stale-pending cleanup as single-char chat
+      // Same stale cleanup as single-char chat: clear pending messages AND active runtimeRuns
       draft.messages = (draft.messages || []).filter((m) => !(m.pending && !m.text));
-      if (!draft.messages.some((m) => m.pending)) {
-        draft.running = false;
-        draft.status = "ready";
+      if (Array.isArray(draft.runtimeRuns)) {
+        const ACTIVE = ["running", "waiting_approval", "checking_in"];
+        draft.runtimeRuns = draft.runtimeRuns.map((r) =>
+          ACTIVE.includes(r.status) ? { ...r, status: "interrupted", phase: "interrupted" } : r
+        );
       }
+      draft.running = false;
+      draft.status = "ready";
       return draft;
     });
     // Update group's topic_id if new
@@ -1043,6 +1063,11 @@ class RoundtableServer {
       case "/api/ownwe/groups/create": {
         const group = this.createGroup(body);
         this.sendJson(res, 200, group);
+        return;
+      }
+      case "/api/ownwe/groups/add-members": {
+        const result = this.addMembersToGroup(body);
+        this.sendJson(res, 200, result);
         return;
       }
       case "/api/ownwe/open-group": {
@@ -1675,13 +1700,18 @@ class RoundtableServer {
         container: { type: "direct_chat", id: `ownwe-${character.id}`, title: character.name || "角色" },
         systemLabel: `进入与「${character.name || "角色"}」的单聊。`,
       });
-      // Clear stale pending messages left by an interrupted reply (e.g. user switched topics
-      // mid-generation). Without this the topic stays running=true forever and blocks all replies.
+      // Kill stale runtime state left by an interrupted reply.
+      // canStartTargetedReply blocks on BOTH latestPendingMessageForSpeaker AND
+      // latestActiveRuntimeRunForSpeaker, so we must clear both.
       draft.messages = (draft.messages || []).filter((m) => !(m.pending && !m.text));
-      if (!draft.messages.some((m) => m.pending)) {
-        draft.running = false;
-        draft.status = "ready";
+      if (Array.isArray(draft.runtimeRuns)) {
+        const ACTIVE = ["running", "waiting_approval", "checking_in"];
+        draft.runtimeRuns = draft.runtimeRuns.map((r) =>
+          ACTIVE.includes(r.status) ? { ...r, status: "interrupted", phase: "interrupted" } : r
+        );
       }
+      draft.running = false;
+      draft.status = "ready";
       return draft;
     });
     try {

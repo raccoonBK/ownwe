@@ -216,6 +216,7 @@
         <div class="chat-av" id="chatAv" style="display:none">🙂</div>
         <span class="chat-title" id="chatTitle">选择一个角色开始聊天</span>
         <span class="status" id="chatStatus"></span>
+        <button class="btn" id="addMemberBtn" title="向群里拉人" style="display:none;font-size:12px;padding:4px 10px;color:var(--ink-2)">＋ 加人</button>
         <button class="btn" id="unlockBtn" title="解除卡顿" style="display:none;font-size:12px;padding:4px 10px;color:var(--ink-2)">⏹ 解卡</button>
       </div>
       <div class="messages" id="messages"><div class="placeholder"><div class="big">☾</div>左边选一个角色，<br>或新建一个。</div></div>
@@ -326,6 +327,20 @@
       <span class="grow"></span>
       <button class="btn" id="gCancel">取消</button>
       <button class="btn primary" id="gCreate">创建</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Add member to group dialog -->
+<dialog id="addMemberDialog">
+  <div class="modal-body">
+    <h3>向群里拉人</h3>
+    <div style="font-size:12px;color:var(--ink-2);margin-bottom:8px">选择要加入的角色</div>
+    <div class="char-check-list" id="addMemberList"></div>
+    <div class="modal-foot">
+      <span class="grow"></span>
+      <button class="btn" id="addMemberCancel">取消</button>
+      <button class="btn primary" id="addMemberConfirm">加入</button>
     </div>
   </div>
 </dialog>
@@ -450,6 +465,7 @@ async function openChat(charId) {
   $("chatAv").textContent = c ? (c.avatar_emoji || "🙂") : "🙂";
   $("chatAv").style.display = "";
   $("chatAv").dataset.charId = charId;
+  $("addMemberBtn").style.display = "none";
   $("composer").style.display = "";
   $("messages").innerHTML = '<div class="placeholder">正在进入…</div>';
   lastKey = "";
@@ -472,6 +488,8 @@ async function openGroupChat(groupId) {
   $("chatAv").textContent = g ? (g.avatarEmoji || g.avatar_emoji || "👥") : "👥";
   $("chatAv").style.display = "";
   $("chatAv").dataset.charId = "";
+  $("addMemberBtn").style.display = "";
+  $("addMemberBtn").dataset.groupId = groupId;
   $("composer").style.display = "";
   $("messages").innerHTML = '<div class="placeholder">正在进入…</div>';
   lastKey = "";
@@ -844,6 +862,35 @@ $("gCreate").addEventListener("click", async () => {
   await api("/api/ownwe/groups/create", { name, avatarEmoji: emoji, charIds });
   $("groupDialog").close();
   await loadContacts();
+});
+
+// ── Add member to group ───────────────────────────────────────────────────
+$("addMemberBtn").addEventListener("click", () => {
+  const groupId = $("addMemberBtn").dataset.groupId;
+  const grp = groups.find((g) => g.id === groupId);
+  const existing = new Set(grp ? (grp.charIds || grp.char_ids_parsed || []) : []);
+  const available = characters.filter((c) => !existing.has(c.id));
+  if (!available.length) { alert("所有角色都已在群里了。"); return; }
+  $("addMemberList").innerHTML = available.map((c) => `
+    <label class="char-check-item">
+      <input type="checkbox" value="${c.id}">
+      <span>${c.avatar_emoji || "🙂"} ${esc(c.name)}</span>
+    </label>`).join("");
+  $("addMemberDialog").showModal();
+});
+$("addMemberCancel").addEventListener("click", () => $("addMemberDialog").close());
+$("addMemberConfirm").addEventListener("click", async () => {
+  const groupId = $("addMemberBtn").dataset.groupId;
+  const charIds = Array.from($("addMemberList").querySelectorAll("input:checked")).map((el) => el.value);
+  if (!charIds.length) { alert("请至少勾选 1 个角色"); return; }
+  await api("/api/ownwe/groups/add-members", { groupId, charIds });
+  $("addMemberDialog").close();
+  await loadContacts();
+  // Refresh group data so the button knows about new members next time
+  const grp = groups.find((g) => g.id === groupId);
+  if (grp) {
+    charIds.forEach((id) => { if (!grp.charIds.includes(id)) grp.charIds.push(id); });
+  }
 });
 
 // ── Moments ───────────────────────────────────────────────────────────────

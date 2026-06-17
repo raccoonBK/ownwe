@@ -278,7 +278,17 @@
     <input type="hidden" id="cId">
     <div class="modal-row">
       <label style="flex:0 0 70px"><span>头像</span><input id="cEmoji" maxlength="2" placeholder="🙂" style="text-align:center"></label>
-      <label class="grow"><span>名字</span><input id="cName" placeholder="如：尤金" required></label>
+      <label class="grow"><span>真名（私密）</span><input id="cName" placeholder="如：尤金·怀尔特" required></label>
+    </div>
+    <div class="modal-row">
+      <label class="grow"><span>代号（对外/群里都用这个）</span><input id="cCodename" placeholder="如：提线人"></label>
+      <label style="flex:0 0 110px"><span>性别</span>
+        <select id="cGender">
+          <option value="">未设定</option>
+          <option value="男">男</option>
+          <option value="女">女</option>
+          <option value="非二元">非二元</option>
+        </select></label>
     </div>
     <label><span>人格 Prompt（粘贴你写的角色设定，越详细越好）</span>
       <textarea id="cPersona" placeholder="你叫…，说话风格…，你和我的关系…"></textarea></label>
@@ -434,7 +444,7 @@ async function loadContacts() {
   }
   const all = [
     ...groups.map((g) => renderContactRow({ id: g.id, name: g.name, emoji: g.avatarEmoji || g.avatar_emoji || "👥", sub: `群聊 · ${(g.charIds || g.char_ids_parsed || []).length} 人`, isGroup: true })),
-    ...characters.map((c) => renderContactRow({ id: c.id, name: c.name, emoji: c.avatar_emoji || "🙂", sub: provLabel(c.provider), isGroup: false })),
+    ...characters.map((c) => renderContactRow({ id: c.id, name: c.name, emoji: c.avatar_emoji || "🙂", sub: c.codename ? `代号「${c.codename}」· ${provLabel(c.provider)}` : provLabel(c.provider), isGroup: false })),
   ];
   box.innerHTML = all.join("");
   box.querySelectorAll(".contact").forEach((el) => {
@@ -812,6 +822,7 @@ function actToPos(v) {
 function openCharDialog(c) {
   $("charDialogTitle").textContent = c ? "编辑角色" : "新建角色";
   $("cId").value = c?.id || ""; $("cEmoji").value = c?.avatar_emoji || ""; $("cName").value = c?.name || "";
+  $("cCodename").value = c?.codename || ""; $("cGender").value = c?.gender || "";
   $("cPersona").value = c?.persona_prompt || ""; $("cProvider").value = c?.provider || "deepseek";
   $("cModel").value = c?.model || ""; $("cKey").value = "";
   $("cDeep").checked = c ? c.deep_thinking !== 0 : true;
@@ -831,6 +842,7 @@ $("charForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   await api("/api/ownwe/characters/upsert", {
     id: $("cId").value || undefined, avatar_emoji: $("cEmoji").value || "🙂", name: $("cName").value.trim(),
+    codename: $("cCodename").value.trim(), gender: $("cGender").value,
     persona_prompt: $("cPersona").value, provider: $("cProvider").value, model: $("cModel").value.trim(),
     api_key_override: $("cKey").value.trim(), deep_thinking: $("cDeep").checked ? 1 : 0,
     checkin_interval_h: FREQ_H[Math.round(Number($("cFreq").value))] ?? 0,

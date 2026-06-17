@@ -25,7 +25,7 @@ function loadMembers(dbPath, charIds) {
   for (const id of charIds) {
     try {
       const c = db.prepare(
-        "SELECT id, name, avatar_emoji, persona_prompt, group_activity FROM ownwe_characters WHERE id = ?"
+        "SELECT id, name, codename, gender, avatar_emoji, persona_prompt, group_activity FROM ownwe_characters WHERE id = ?"
       ).get(id);
       if (c) out.push(c);
     } catch {
@@ -35,14 +35,19 @@ function loadMembers(dbPath, charIds) {
   return out;
 }
 
-// Match @名字 against the roster. Tolerates @ + full name or @ + first 2 chars.
+// Public handle: characters know each other only by codename (falls back to name).
+function pub(m) {
+  return (m && (m.codename || m.name) || "").trim();
+}
+
+// Match @代号 against the roster. Tolerates @ + full handle or @ + first 2 chars.
 function parseMentions(text, members) {
   const hits = [];
   const t = String(text || "");
   for (const m of members) {
-    const name = (m.name || "").trim();
-    if (!name) continue;
-    if (t.includes("@" + name) || (name.length > 2 && t.includes("@" + name.slice(0, 2)))) {
+    const handle = pub(m);
+    if (!handle) continue;
+    if (t.includes("@" + handle) || (handle.length > 2 && t.includes("@" + handle.slice(0, 2)))) {
       hits.push(m.id);
     }
   }
@@ -50,20 +55,54 @@ function parseMentions(text, members) {
 }
 
 function buildDecisionPrompt({ member, others, transcript, forced }) {
-  const peers = others.map((o) => o.name).join("、");
+  const peers = others.map((o) => pub(o)).join("、");
+  const genderNote = member.gender ? `你的性别是${member.gender}。` : "";
   const system = [
-    member.persona_prompt ? `你的人设：\n${member.persona_prompt.slice(0, 1200)}` : `你是「${member.name}」。`,
+    member.persona_prompt ? `你的人设：\n${member.persona_prompt.slice(0, 1200)}` : `你是「${pub(member)}」。`,
+    `在这个群里，大家只用代号相称，你的代号是「${pub(member)}」，不要暴露真名。${genderNote}`,
     `你正在一个群聊里。群里还有：${peers}，以及用户本人。`,
     CHANNEL_RULE,
     forced
       ? "刚才有人在群里点名 @ 了你，你应该自然地回应。"
       : "群里不是每句话都需要你接。只有当这条真的和你有关、你确实有话想说时才开口；否则就保持沉默别硬接，那样很假。",
-    "如果你想把话头递给群里某个人，可以在消息里自然地 @ 那个人的名字。",
+    "如果你想把话头递给群里某个人，可以在消息里自然地 @ 那个人的代号。",
     "用你自己的语气，短，像真人在群里随手发的。绝不报账记忆（不说「我记得/你之前说过」）。",
-    '严格输出 JSON，无 markdown：{"speak": true/false, "message": "要发的话（沉默就空）", "mention": "想@的群成员名字，没有就空"}',
+    '严格输出 JSON，无 markdown：{"speak": true/false, "message": "要发的话（沉默就空）", "mention": "想@的群成员代号，没有就空"}',
   ].join("\n");
   const user = `群聊最近记录：\n${transcript}\n\n（你刚看到以上消息，现在决定要不要说话）`;
   return { system, user };
+}
+
+// Compose an ambient conversation opener — a character spontaneously starts a topic
+// when the group has been quiet (the group-chat embodiment of the Life Tick).
+async function composeGroupOpener({ dbPath, member, others, transcript, ownweMode = "B" }) {
+  const peers = others.map((o) => pub(o)).join("、");
+  const genderNote = member.gender ? `你的性别是${member.gender}。` : "";
+  const system = [
+    member.persona_prompt ? `你的人设：\n${member.persona_prompt.slice(0, 1200)}` : `你是「${pub(member)}」。`,
+    `在这个群里大家只用代号相称，你的代号是「${pub(member)}」，不要暴露真名。${genderNote}`,
+    `群里还有：${peers}，以及用户本人。群里已经安静了一阵子。`,
+    CHANNEL_RULE,
+    "你忽然想在群里起个话头——可能是你最近在想的事、一个突然的念头、一句吐槽、或者想问问大家。",
+    "自然、短，像真人在群里随手冒出来的一句。不要说「群里好安静」这种元话题，直接说那件事本身。",
+    "绝不报账记忆（不说「我记得/上次」）。可以自然地 @ 某个代号把话头递过去。",
+  ].join("\n");
+  const user = transcript
+    ? `群聊之前的记录：\n${transcript}\n\n（现在没人说话有一会儿了，你起个新话头）`
+    : "（群里还没什么人说话，你来起个话头）";
+  try {
+    const raw = await generateCharacterReply({
+      dbPath,
+      charId: member.id,
+      ownweMode,
+      systemPrompt: system,
+      messages: [{ role: "user", content: user }],
+    });
+    return (raw || "").trim().slice(0, 400);
+  } catch (err) {
+    console.warn(`[ownwe-group] ${pub(member)} opener failed:`, err.message);
+    return "";
+  }
 }
 
 function parseDecision(raw) {
@@ -135,7 +174,7 @@ async function runGroupReplies({
       });
       decision = parseDecision(raw);
     } catch (err) {
-      console.warn(`[ownwe-group] ${member.name} decision failed:`, err.message);
+      console.warn(`[ownwe-group] ${pub(member)} decision failed:`, err.message);
       continue;
     }
     if (!decision || !decision.message) continue;
@@ -147,13 +186,13 @@ async function runGroupReplies({
 
     pushMessage({
       charId: member.id,
-      charName: member.name,
+      charName: pub(member),
       charEmoji: member.avatar_emoji || "🙂",
       text: decision.message,
     });
     posted += 1;
     spokenCount[member.id] = (spokenCount[member.id] || 0) + 1;
-    runningTranscript += `\n${member.name}：${decision.message}`;
+    runningTranscript += `\n${pub(member)}：${decision.message}`;
 
     // fan-out: did this reply @ someone? (bounded by hop)
     if (hop < maxHops) {
@@ -173,4 +212,4 @@ async function runGroupReplies({
   return posted;
 }
 
-module.exports = { runGroupReplies, parseMentions, CHANNEL_RULE };
+module.exports = { runGroupReplies, composeGroupOpener, loadMembers, parseMentions, pub, CHANNEL_RULE };

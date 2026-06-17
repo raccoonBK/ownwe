@@ -143,7 +143,7 @@ async function reactToMoment(dbPath, momentId, text, { excludeCharId = null } = 
   let chars = [];
   try {
     const all = getDb(dbPath).prepare(
-      "SELECT id, name, persona_prompt FROM ownwe_characters ORDER BY sort_order ASC LIMIT 6"
+      "SELECT id, name, codename, persona_prompt FROM ownwe_characters ORDER BY sort_order ASC LIMIT 6"
     ).all();
     chars = excludeCharId ? all.filter((c) => c.id !== excludeCharId) : all;
   } catch {
@@ -187,7 +187,7 @@ async function reactToMoment(dbPath, momentId, text, { excludeCharId = null } = 
           db.prepare(
             "INSERT INTO ownwe_moment_comments (moment_id, author_type, author_id, text) VALUES (?, 'char', ?, ?)"
           ).run(momentId, ch.id, comment.slice(0, 500));
-          recordMomentObservation(dbPath, { momentText: text, actorId: ch.id, actorName: ch.name, commentText: comment });
+          recordMomentObservation(dbPath, { momentText: text, actorId: ch.id, actorName: ch.codename || ch.name, commentText: comment });
         } catch {}
       }
     } catch {
@@ -295,16 +295,17 @@ async function reactToComment(dbPath, momentId, userCommentText, momentAuthorId)
     if (!candidates.size) return;
 
     const charRows = db.prepare(
-      `SELECT id, name, persona_prompt FROM ownwe_characters WHERE id IN (${[...candidates].map(() => "?").join(",")})`
+      `SELECT id, name, codename, persona_prompt FROM ownwe_characters WHERE id IN (${[...candidates].map(() => "?").join(",")})`
     ).all(...candidates);
 
     const moment = db.prepare("SELECT text FROM ownwe_moments WHERE id = ?").get(momentId);
     const momentText = moment?.text || "";
 
     const prevComments = db.prepare(
-      "SELECT oc.text, oc.author_type, oc.author_id, oc.reply_to_name, ch.name as char_name FROM ownwe_moment_comments oc LEFT JOIN ownwe_characters ch ON ch.id = oc.author_id WHERE oc.moment_id = ? ORDER BY oc.id ASC LIMIT 10"
+      "SELECT oc.text, oc.author_type, oc.author_id, oc.reply_to_name, ch.name as char_name, ch.codename as char_codename FROM ownwe_moment_comments oc LEFT JOIN ownwe_characters ch ON ch.id = oc.author_id WHERE oc.moment_id = ? ORDER BY oc.id ASC LIMIT 10"
     ).all(momentId).map((c) => {
-      const who = c.author_type === "user" ? "我" : (c.char_name || "角色");
+      // Characters know each other by codename in shared spaces.
+      const who = c.author_type === "user" ? "我" : (c.char_codename || c.char_name || "角色");
       return `${who}：${c.reply_to_name ? `回复 ${c.reply_to_name}：` : ""}${c.text}`;
     }).join("\n");
 
@@ -341,7 +342,7 @@ async function reactToComment(dbPath, momentId, userCommentText, momentAuthorId)
           db.prepare(
             "INSERT INTO ownwe_moment_comments (moment_id, author_type, author_id, text, reply_to_name) VALUES (?, 'char', ?, ?, ?)"
           ).run(momentId, ch.id, reply.slice(0, 500), "我");
-          recordMomentObservation(dbPath, { momentText, actorId: ch.id, actorName: ch.name, commentText: reply });
+          recordMomentObservation(dbPath, { momentText, actorId: ch.id, actorName: ch.codename || ch.name, commentText: reply });
         }
       } catch {}
     }

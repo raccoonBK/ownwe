@@ -78,11 +78,12 @@ function upsertCharacter(dbPath, char) {
   const checkinIntervalH = char.checkin_interval_h === undefined ? 8 : Number(char.checkin_interval_h);
   const groupActivity = char.group_activity === undefined ? 0.6 : Number(char.group_activity);
   getDb(dbPath).prepare(`
-    INSERT INTO ownwe_characters (id, name, codename, persona_prompt, provider, model, api_key_override, mode_bias, avatar_emoji, sort_order, deep_thinking, checkin_interval_h, group_activity, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO ownwe_characters (id, name, codename, gender, persona_prompt, provider, model, api_key_override, mode_bias, avatar_emoji, sort_order, deep_thinking, checkin_interval_h, group_activity, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       codename = excluded.codename,
+      gender = excluded.gender,
       persona_prompt = excluded.persona_prompt,
       provider = excluded.provider,
       model = excluded.model,
@@ -98,6 +99,7 @@ function upsertCharacter(dbPath, char) {
     id,
     char.name || "未命名",
     char.codename || "",
+    char.gender || "",
     char.persona_prompt || "",
     char.provider || "anthropic",
     char.model || "",
@@ -237,8 +239,9 @@ function tensionRegisterNote(relationshipState, mode) {
 function readRecentMomentsContext(dbPath, charId, { limit = 6 } = {}) {
   try {
     const db = getDb(dbPath);
+    // Other characters are known by codename in the shared feed (falls back to name).
     const charNames = Object.fromEntries(
-      db.prepare("SELECT id, name FROM ownwe_characters").all().map((c) => [c.id, c.name])
+      db.prepare("SELECT id, name, codename FROM ownwe_characters").all().map((c) => [c.id, c.codename || c.name])
     );
     const moments = db.prepare(
       "SELECT id, text, author_type, author_id FROM ownwe_moments ORDER BY id DESC LIMIT ?"
@@ -296,9 +299,10 @@ function buildOwnWeContext({ character, memories = [], transcript = "", mode = "
 
   // Time sense — what time it is + how long since you last talked (§0 拟人)
   const timeNote = buildTimeNote(relationshipState);
+  const identityNote = buildIdentityNote(character);
 
   // 画像 block — this character's own picture of the user, woven in as intuition
-  const personaWithProfile = [character.persona_prompt || "", modeNote, timeNote, profileBlock]
+  const personaWithProfile = [identityNote, character.persona_prompt || "", modeNote, timeNote, profileBlock]
     .filter(Boolean)
     .join("\n\n");
 
@@ -320,6 +324,26 @@ function buildOwnWeContext({ character, memories = [], transcript = "", mode = "
   result = fillConditional(result, "MOMENTS_BLOCK", momentsBlock);
   result = result.replace("{{TRANSCRIPT}}", transcript || "（暂无对话记录）");
   return result.trim();
+}
+
+// Identity note: who the character is. Real name is private; codename is the public
+// handle used among other characters. Gender informs self-reference, not announcement.
+function buildIdentityNote(character = {}) {
+  const name = (character.name || "").trim();
+  const codename = (character.codename || "").trim();
+  const gender = (character.gender || "").trim();
+  const parts = [];
+  if (codename && name) {
+    parts.push(`你的真名是「${name}」，但在外人和其他角色面前你只用代号「${codename}」自称，不轻易暴露真名。`);
+  } else if (codename) {
+    parts.push(`你对外只用代号「${codename}」，不暴露真实身份。`);
+  } else if (name) {
+    parts.push(`你叫「${name}」。`);
+  }
+  if (gender) {
+    parts.push(`你的性别是${gender}，说话和用词自然贴合，但不用刻意强调。`);
+  }
+  return parts.join("\n");
 }
 
 // Build a natural time-awareness note: time of day + gap since last talk.

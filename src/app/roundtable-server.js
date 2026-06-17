@@ -52,7 +52,7 @@ const {
   takePendingCheckins,
   unreadCounts,
 } = require("./ownwe-checkin");
-const { runGroupReplies } = require("./ownwe-group");
+const { runGroupReplies, composeGroupOpener, loadMembers: loadGroupMembers, pub: groupPub } = require("./ownwe-group");
 const {
   RoundtableCheckinPoller,
   RoundtableCheckinStore,
@@ -462,6 +462,16 @@ class RoundtableServer {
         .catch((err) => console.warn("[ownwe] char moment poll failed:", err.message));
     }, Math.max(1, momentEveryMin) * 60_000);
     if (this._ownweCharMomentTimer.unref) this._ownweCharMomentTimer.unref();
+
+    // Group ambient chat — every so often, if a group has been quiet, a member starts
+    // a conversation on their own (the group-chat Life Tick).
+    const groupAmbientMin = Number(process.env.OWNWE_GROUP_AMBIENT_POLL_MIN || 30);
+    if (this._ownweGroupAmbientTimer) clearInterval(this._ownweGroupAmbientTimer);
+    this._ownweGroupAmbientTimer = setInterval(() => {
+      this.maybeRunGroupAmbient()
+        .catch((err) => console.warn("[ownwe] group ambient poll failed:", err.message));
+    }, Math.max(1, groupAmbientMin) * 60_000);
+    if (this._ownweGroupAmbientTimer.unref) this._ownweGroupAmbientTimer.unref();
   }
 
   // ── Group chat ───────────────────────────────────────────────────────────
@@ -544,6 +554,7 @@ class RoundtableServer {
     this.checkinPoller.close();
     if (this._ownweCheckinTimer) clearInterval(this._ownweCheckinTimer);
     if (this._ownweCharMomentTimer) clearInterval(this._ownweCharMomentTimer);
+    if (this._ownweGroupAmbientTimer) clearInterval(this._ownweGroupAmbientTimer);
     await this.runtimeHub.close();
     await new Promise((resolve) => this.server.close(resolve));
   }
@@ -1060,6 +1071,12 @@ class RoundtableServer {
       case "/api/ownwe/groups/add-members": {
         const result = this.addMembersToGroup(body);
         this.sendJson(res, 200, result);
+        return;
+      }
+      case "/api/ownwe/groups/ambient": {
+        // Manual trigger: have a group member start a conversation now (force bypasses timing)
+        await this.maybeRunGroupAmbient({ force: Boolean(body.force) });
+        this.sendJson(res, 200, this.snapshot());
         return;
       }
       case "/api/ownwe/open-group": {
@@ -2383,6 +2400,105 @@ class RoundtableServer {
         }
       }
     });
+  }
+
+  // Find a group's topic state in the store (active draft or a saved topic) by topic id.
+  findGroupTopicState(topicId) {
+    const id = normalizeText(topicId);
+    if (!id) return null;
+    const state = this.store.get();
+    if (state?.id === id) return { kind: "active", id };
+    const topics = Array.isArray(state?.topics) ? state.topics : [];
+    const t = topics.find((x) => x?.id === id);
+    return t ? { kind: "saved", id } : null;
+  }
+
+  // Group-chat Life Tick: if a group has been quiet for a while, one member starts
+  // a conversation on their own. Best-effort, runs off a timer.
+  async maybeRunGroupAmbient({ force = false } = {}) {
+    const AMBIENT_GAP_H = Number(process.env.OWNWE_GROUP_AMBIENT_GAP_H || 2);
+    const AMBIENT_PROB = Number(process.env.OWNWE_GROUP_AMBIENT_PROB || 0.5);
+    const groups = this.listGroups();
+    for (const group of groups) {
+      try {
+        const topicId = (() => {
+          try {
+            return require("../db/connection").getDb(this.config.dbPath)
+              .prepare("SELECT topic_id FROM ownwe_groups WHERE id = ?").get(group.id)?.topic_id || "";
+          } catch { return ""; }
+        })();
+        if (!topicId) continue; // group never opened — nothing to revive
+        const loc = this.findGroupTopicState(topicId);
+        if (!loc) continue;
+        const topicState = loc.kind === "active"
+          ? this.store.get()
+          : (this.store.get().topics || []).find((t) => t?.id === topicId);
+        const msgs = Array.isArray(topicState?.messages) ? topicState.messages : [];
+        const lastAt = msgs.length ? Date.parse(msgs[msgs.length - 1]?.at || "") : NaN;
+        const gapH = Number.isFinite(lastAt) ? (Date.now() - lastAt) / 3_600_000 : Infinity;
+        if (!force) {
+          if (gapH < AMBIENT_GAP_H) continue;       // still warm — leave it
+          if (gapH > 24 * 14) continue;             // abandoned for 2+ weeks — stop
+          if (Math.random() > AMBIENT_PROB) continue;
+        }
+
+        const members = loadGroupMembers(this.config.dbPath, group.charIds);
+        if (members.length < 2) continue;
+        // Pick a starter weighted by group_activity (quiet chars rarely initiate).
+        const weighted = members.map((m) => ({
+          m, w: Math.max(0.05, typeof m.group_activity === "number" ? m.group_activity : 0.6),
+        }));
+        const total = weighted.reduce((s, x) => s + x.w, 0);
+        let r = Math.random() * total, starter = weighted[0].m;
+        for (const x of weighted) { r -= x.w; if (r <= 0) { starter = x.m; break; } }
+
+        const transcript = formatGroupTranscript(msgs, { maxMessages: 12 });
+        const others = members.filter((x) => x.id !== starter.id);
+        const opener = await composeGroupOpener({
+          dbPath: this.config.dbPath, member: starter, others, transcript,
+          ownweMode: this._lastOwnweMode || "B",
+        });
+        if (!opener) continue;
+
+        const pushIntoTopic = (m) => {
+          this.store.update((draft) => {
+            const ctx = draft.id === topicId
+              ? draft
+              : (draft.topics || []).find((t) => t?.id === topicId);
+            if (!ctx) return draft;
+            ctx.messages = Array.isArray(ctx.messages) ? ctx.messages : [];
+            ctx.messages.push(createMessage("claude", m.text, {
+              ownweCharId: m.charId,
+              ownweCharName: m.charName,
+              ownweCharEmoji: m.charEmoji,
+            }));
+            ctx.updatedAt = new Date().toISOString();
+            if (ctx === draft) draft.updatedAt = ctx.updatedAt;
+            return draft;
+          }, { silentIfEmpty: true });
+        };
+
+        pushIntoTopic({
+          charId: starter.id, charName: groupPub(starter),
+          charEmoji: starter.avatar_emoji || "🙂", text: opener,
+        });
+        console.log(`[ownwe] group "${group.name}" ambient opener by ${groupPub(starter)}`);
+
+        // Let other members optionally react to the opener (bail if topic vanished).
+        await runGroupReplies({
+          dbPath: this.config.dbPath,
+          charIds: group.charIds,
+          transcript: `${transcript}\n${groupPub(starter)}：${opener}`.trim(),
+          userText: "",
+          ownweMode: this._lastOwnweMode || "B",
+          maxMessages: 3,
+          isStale: () => !this.findGroupTopicState(topicId),
+          pushMessage: pushIntoTopic,
+        });
+      } catch (err) {
+        console.warn(`[ownwe] group ambient for ${group?.id} failed:`, err.message);
+      }
+    }
   }
 
   scheduleReplies(body = {}) {

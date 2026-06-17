@@ -69,18 +69,18 @@ function createApiAgentAdapter(config) {
     getHistory(threadId).push({ role, content });
   }
 
-  async function callApi({ provider, apiKey, baseUrl, model, messages, systemPrompt }) {
+  async function callApi({ provider, apiKey, baseUrl, model, messages, systemPrompt, images = [] }) {
     const providerCfg = PROVIDER_CONFIGS[provider] || PROVIDER_CONFIGS.openai;
     const resolvedBase = baseUrl || providerCfg.baseUrl;
     const resolvedModel = model || providerCfg.defaultModel;
 
     if (provider === "anthropic") {
-      return callAnthropicMessages({ apiKey, baseUrl: resolvedBase, model: resolvedModel, messages, systemPrompt });
+      return callAnthropicMessages({ apiKey, baseUrl: resolvedBase, model: resolvedModel, messages, systemPrompt, images });
     }
-    return callOpenAICompat({ apiKey, baseUrl: resolvedBase, path: providerCfg.path, model: resolvedModel, messages, systemPrompt });
+    return callOpenAICompat({ apiKey, baseUrl: resolvedBase, path: providerCfg.path, model: resolvedModel, messages, systemPrompt, images });
   }
 
-  async function sendTextTurn({ bindingKey, workspaceRoot, text, attachments = [], metadata = {}, model = "", allowCreateThread = true, onTurnStarted = null, ownweMode = "B" }) {
+  async function sendTextTurn({ bindingKey, workspaceRoot, text, attachments = [], images = [], metadata = {}, model = "", allowCreateThread = true, onTurnStarted = null, ownweMode = "B" }) {
     let provider = config.provider || "anthropic";
     let apiKey = config.apiKey || "";
     let explicitModel = model || config.model || "";
@@ -106,6 +106,14 @@ function createApiAgentAdapter(config) {
       }
     }
     if (!resolvedModel) resolvedModel = PROVIDER_CONFIGS[provider]?.defaultModel || "";
+
+    // Vision: if the user attached images, route this turn to a vision-capable model.
+    // Prefer Kimi (per design), then Gemini / Claude / GPT-4o, whichever has a key.
+    const hasImages = Array.isArray(images) && images.length > 0;
+    if (hasImages) {
+      const v = pickVisionTarget(provider, apiKey);
+      if (v) { provider = v.provider; apiKey = v.apiKey; resolvedModel = v.model; }
+    }
 
     if (!apiKey) {
       throw new Error(`[api-agent] no API key for provider=${provider} (角色没配 key，且环境里也没有对应的 ${provider.toUpperCase()}_API_KEY)`);
@@ -139,10 +147,11 @@ function createApiAgentAdapter(config) {
       replyText = await callApi({
         provider,
         apiKey,
-        baseUrl: charOverride ? "" : (config.baseUrl || ""),
+        baseUrl: (charOverride || hasImages) ? "" : (config.baseUrl || ""),
         model: resolvedModel,
         messages: getHistory(threadId),
         systemPrompt: isFirstTurn ? systemPrompt : "",
+        images: hasImages ? images : [],
       });
     } catch (error) {
       emit({
@@ -248,11 +257,21 @@ function buildSystemPrompt(config) {
   }
 }
 
-function callAnthropicMessages({ apiKey, baseUrl, model, messages, systemPrompt }) {
+function callAnthropicMessages({ apiKey, baseUrl, model, messages, systemPrompt, images = [] }) {
   const anthropicMessages = messages.map((m) => ({
     role: m.role === "assistant" ? "assistant" : "user",
     content: String(m.content || ""),
   }));
+  // attach images to the final user message
+  if (images.length && anthropicMessages.length) {
+    const lastIdx = anthropicMessages.length - 1;
+    const blocks = [{ type: "text", text: String(anthropicMessages[lastIdx].content || "") }];
+    for (const url of images) {
+      const parsed = parseDataUrl(url);
+      if (parsed) blocks.push({ type: "image", source: { type: "base64", media_type: parsed.mediaType, data: parsed.data } });
+    }
+    anthropicMessages[lastIdx] = { role: "user", content: blocks };
+  }
 
   const body = JSON.stringify({
     model,
@@ -276,13 +295,22 @@ function callAnthropicMessages({ apiKey, baseUrl, model, messages, systemPrompt 
   });
 }
 
-function callOpenAICompat({ apiKey, baseUrl, path, model, messages, systemPrompt }) {
+function callOpenAICompat({ apiKey, baseUrl, path, model, messages, systemPrompt, images = [] }) {
   const allMessages = [];
   if (systemPrompt) {
     allMessages.push({ role: "system", content: systemPrompt });
   }
   for (const m of messages) {
     allMessages.push({ role: m.role, content: String(m.content || "") });
+  }
+  // attach images to the final user message (OpenAI / Kimi / Gemini vision format)
+  if (images.length && allMessages.length) {
+    const lastIdx = allMessages.length - 1;
+    const parts = [{ type: "text", text: String(allMessages[lastIdx].content || "") }];
+    for (const url of images) {
+      parts.push({ type: "image_url", image_url: { url } });
+    }
+    allMessages[lastIdx] = { role: "user", content: parts };
   }
 
   const body = JSON.stringify({
@@ -364,6 +392,32 @@ function resolveCharacterProvider(dbPath, bindingKey) {
   } catch {
     return null;
   }
+}
+
+// Pick a vision-capable provider/model/key for an image turn. Prefer Kimi.
+function pickVisionTarget(curProvider, curApiKey) {
+  if (process.env.KIMI_API_KEY) {
+    return { provider: "kimi", apiKey: process.env.KIMI_API_KEY, model: "moonshot-v1-8k-vision-preview" };
+  }
+  // if the character's own provider already does vision, keep it
+  if (curApiKey && (curProvider === "gemini" || curProvider === "anthropic" || curProvider === "openai")) {
+    const m = { gemini: "gemini-2.5-pro", anthropic: "claude-sonnet-4-6", openai: "gpt-4o" }[curProvider];
+    return { provider: curProvider, apiKey: curApiKey, model: m };
+  }
+  // otherwise fall back to whatever vision-capable key exists in the environment
+  if (process.env.GEMINI_API_KEY) return { provider: "gemini", apiKey: process.env.GEMINI_API_KEY, model: "gemini-2.5-pro" };
+  if (process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY) {
+    return { provider: "anthropic", apiKey: process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY, model: "claude-sonnet-4-6" };
+  }
+  if (process.env.OPENAI_API_KEY) return { provider: "openai", apiKey: process.env.OPENAI_API_KEY, model: "gpt-4o" };
+  return null;
+}
+
+// Parse "data:image/png;base64,XXXX" → { mediaType, data }.
+function parseDataUrl(url) {
+  const m = /^data:([^;]+);base64,(.*)$/s.exec(String(url || ""));
+  if (!m) return null;
+  return { mediaType: m[1], data: m[2] };
 }
 
 function envKeyForProvider(provider) {

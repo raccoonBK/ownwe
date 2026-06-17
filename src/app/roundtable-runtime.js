@@ -106,7 +106,7 @@ class RuntimeHub {
     return normalizeText(adapter.getSessionStore().getThreadIdForWorkspace(bindingKey, this.workspaceRoot));
   }
 
-  async sendTurn({ speaker, topicId = "", text, attachments = [], onTurnStarted = null, requireExistingThread = false, ownweMode = "B" }) {
+  async sendTurn({ speaker, topicId = "", text, attachments = [], images = [], onTurnStarted = null, requireExistingThread = false, ownweMode = "B" }) {
     await this.initializeSpeaker(speaker);
     const adapter = this.adapters[speaker];
     if (!adapter) {
@@ -135,6 +135,7 @@ class RuntimeHub {
         workspaceRoot: this.workspaceRoot,
         text,
         attachments,
+        images,
         metadata: {
           workspaceId: "roundtable",
           accountId: "pwa",

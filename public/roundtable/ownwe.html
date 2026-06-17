@@ -68,7 +68,13 @@
   .typing { color: var(--ink-2); font-style: italic; }
   .composer { border-top: 1px solid var(--line); padding: 14px 18px; flex-shrink: 0; }
   .composer textarea { width: 100%; resize: none; min-height: 46px; max-height: 140px; background: var(--list); border: 1px solid var(--line); border-radius: 12px; color: var(--ink); padding: 12px 14px; font-family: inherit; font-size: 15px; line-height: 1.5; }
-  .composer-row { display: flex; justify-content: flex-end; margin-top: 8px; }
+  .composer-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .attach-btn { background: var(--list); border: 1px solid var(--line); color: var(--ink); border-radius: 9px; width: 38px; height: 34px; cursor: pointer; font-size: 16px; }
+  .attach-btn:hover { background: var(--list-active); }
+  .attach-preview { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .attach-preview .thumb { position: relative; width: 56px; height: 56px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+  .attach-preview .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .attach-preview .thumb button { position: absolute; top: 0; right: 0; background: rgba(0,0,0,.6); color: #fff; border: none; width: 18px; height: 18px; cursor: pointer; font-size: 12px; line-height: 1; }
   .send-btn { padding: 7px 22px; border-radius: 9px; border: none; background: var(--me); color: var(--me-ink); cursor: pointer; font-size: 14px; }
   .send-btn:disabled { opacity: .4; }
 
@@ -152,8 +158,14 @@
       <div class="chat-head"><span id="chatTitle">选择一个角色开始聊天</span><span class="status" id="chatStatus"></span></div>
       <div class="messages" id="messages"><div class="placeholder"><div class="big">☾</div>左边选一个角色，<br>或新建一个。</div></div>
       <div class="composer" id="composer" style="display:none">
+        <div id="attachPreview" class="attach-preview"></div>
         <textarea id="input" placeholder="说点什么…（Enter 发送，Shift+Enter 换行）"></textarea>
-        <div class="composer-row"><button class="send-btn" id="sendBtn">发送</button></div>
+        <div class="composer-row">
+          <button class="attach-btn" id="attachBtn" title="发图片">📎</button>
+          <input type="file" id="fileInput" accept="image/*" multiple hidden>
+          <span class="grow"></span>
+          <button class="send-btn" id="sendBtn">发送</button>
+        </div>
       </div>
     </div>
 
@@ -369,17 +381,43 @@ function startPolling() {
 }
 function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
 
+let pendingImages = []; // data URLs to send with the next message
+
+function renderAttachPreview() {
+  const box = $("attachPreview");
+  box.innerHTML = pendingImages.map((url, i) =>
+    `<div class="thumb"><img src="${url}"><button data-rm="${i}">×</button></div>`).join("");
+  box.querySelectorAll("[data-rm]").forEach((b) => b.addEventListener("click", () => {
+    pendingImages.splice(Number(b.dataset.rm), 1); renderAttachPreview();
+  }));
+}
+$("attachBtn").addEventListener("click", () => $("fileInput").click());
+$("fileInput").addEventListener("change", (e) => {
+  const files = Array.from(e.target.files || []).slice(0, 4);
+  for (const f of files) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (pendingImages.length < 4) { pendingImages.push(reader.result); renderAttachPreview(); }
+    };
+    reader.readAsDataURL(f);
+  }
+  e.target.value = "";
+});
+
 async function send() {
   const input = $("input");
   const text = input.value.trim();
-  if (!text || !activeCharId) return;
+  const imgs = pendingImages.slice();
+  if ((!text && !imgs.length) || !activeCharId) return;
   input.value = "";
+  pendingImages = []; renderAttachPreview();
   const box = $("messages");
-  box.insertAdjacentHTML("beforeend", `<div class="row me"><div class="av">我</div><div class="bubble">${esc(text)}</div></div>`);
+  const thumbs = imgs.map((u) => `<img src="${u}" style="max-width:160px;border-radius:8px;display:block;margin-bottom:4px">`).join("");
+  box.insertAdjacentHTML("beforeend", `<div class="row me"><div class="av">我</div><div class="bubble">${thumbs}${esc(text)}</div></div>`);
   box.scrollTop = box.scrollHeight;
   lastKey = "";
   try {
-    await fetch("/api/user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, target: "claude" }) });
+    await fetch("/api/user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text || "（看图）", target: "claude", images: imgs }) });
   } catch (e) { alert("发送失败：" + e.message); }
 }
 $("sendBtn").addEventListener("click", send);

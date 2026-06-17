@@ -730,6 +730,7 @@ class RoundtableServer {
           this.sendJson(res, 202, { ok: true });
           return;
         }
+        this._pendingImages = Array.isArray(body.images) ? body.images.slice(0, 4) : [];
         this.addUserMessage(body);
         this.sendJson(res, 202, { ok: true });
         this.scheduleReplies(body);
@@ -2632,6 +2633,7 @@ class RoundtableServer {
           topicId: state.id,
           text: runtimePrompt,
           attachments: runtimeAttachments,
+          images: (() => { const im = this._pendingImages || []; this._pendingImages = []; return im; })(),
           ownweMode: this._lastOwnweMode || "B",
           onTurnStarted: (turn) => {
             this.registerPendingMessageTurn(turn, pendingMessageId);

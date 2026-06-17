@@ -38,7 +38,7 @@ async function maybeGenerateCheckins(dbPath, { force = false } = {}) {
   try {
     // only characters the user has actually talked to (have a relationship row)
     rows = getDb(dbPath).prepare(`
-      SELECT c.id, c.name, c.persona_prompt, r.attachment, r.tension, r.last_interaction_at
+      SELECT c.id, c.name, c.persona_prompt, c.checkin_interval_h, r.attachment, r.tension, r.last_interaction_at
       FROM ownwe_characters c
       JOIN char_relationship_state r ON r.char_id = c.id
     `).all();
@@ -49,19 +49,21 @@ async function maybeGenerateCheckins(dbPath, { force = false } = {}) {
   let made = 0;
   for (const ch of rows) {
     try {
+      const intervalH = ch.checkin_interval_h === undefined ? MIN_SPACING_H : Number(ch.checkin_interval_h);
       const gapH = hoursSince(ch.last_interaction_at);
       if (!force) {
+        if (intervalH <= 0) continue; // disabled for this character
         if (gapH < MIN_GAP_H || gapH > MAX_GAP_H) continue;
         // already a pending ping?
         const pending = getDb(dbPath).prepare(
           "SELECT 1 FROM ownwe_pending_checkins WHERE char_id = ? AND delivered = 0"
         ).get(ch.id);
         if (pending) continue;
-        // min spacing since last ping (delivered or not)
+        // per-character min spacing since last ping
         const last = getDb(dbPath).prepare(
           "SELECT created_at FROM ownwe_pending_checkins WHERE char_id = ? ORDER BY id DESC LIMIT 1"
         ).get(ch.id);
-        if (last && hoursSince(last.created_at) < MIN_SPACING_H) continue;
+        if (last && hoursSince(last.created_at) < intervalH) continue;
         // sparse gate — more attached → a bit more likely, but still rare
         const prob = Math.min(0.85, BASE_PROB * (0.6 + (ch.attachment || 0.5)));
         if (Math.random() > prob) continue;

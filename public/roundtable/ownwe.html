@@ -159,6 +159,17 @@
   .char-check-item:hover { background: var(--list-active); }
   .char-check-item input[type=checkbox] { width: auto; }
 
+  /* ── Narration folding ── */
+  details.narr { display: inline; }
+  details.narr > summary { display: inline-block; cursor: pointer; list-style: none; background: rgba(255,255,255,.07); border-radius: 4px; padding: 1px 7px; font-size: 11px; color: var(--ink-2); margin: 0 1px; vertical-align: middle; }
+  details.narr > summary::-webkit-details-marker { display: none; }
+  details.narr > summary::after { content: "···"; }
+  details.narr[open] > summary::after { content: "▲"; }
+  details.narr > .narr-text { display: block; font-size: 12px; color: var(--ink-2); font-style: italic; background: rgba(255,255,255,.04); border-radius: 6px; padding: 5px 8px; margin: 4px 0 2px; line-height: 1.5; white-space: pre-wrap; }
+
+  /* ── Frequency slider ── */
+  input[type=range].freq-slider { width: 100%; accent-color: var(--accent); margin-top: 6px; }
+
   /* Multi-bubble fade-in */
   @keyframes bubblePop {
     from { opacity: 0; transform: translateY(6px); }
@@ -285,6 +296,11 @@
     <label style="display:flex;align-items:center;gap:8px;flex-direction:row">
       <input type="checkbox" id="cDeep" checked style="width:auto">
       <span style="margin:0">默认开深度思考（回复更真实；关掉可省钱）</span>
+    </label>
+    <label>
+      <span>主动发消息频率 — <span id="cFreqLabel" style="color:var(--accent)">每 8 小时</span></span>
+      <input type="range" class="freq-slider" id="cFreq" min="0" max="72" step="2" value="8">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2);margin-top:3px"><span>← 从不主动</span><span>更频繁 →</span></div>
     </label>
     <div class="modal-foot">
       <button type="button" class="btn danger" id="cDelete" style="visibility:hidden">删除</button>
@@ -465,6 +481,24 @@ async function openGroupChat(groupId) {
   $("input").focus();
 }
 
+// ── Narration folding ─────────────────────────────────────────────────────
+// （动作/心理描写） and *动作* get collapsed into a tiny toggle by default.
+const NARR_RE = /(（[^）\n]{1,300}）|\*[^*\n]{1,300}\*)/g;
+function renderBubbleHtml(text) {
+  if (!text) return "";
+  let result = "", last = 0;
+  NARR_RE.lastIndex = 0;
+  let m;
+  while ((m = NARR_RE.exec(text)) !== null) {
+    result += esc(text.slice(last, m.index));
+    const inner = m[1].replace(/^（|）$|^\*|\*$/g, "");
+    result += `<details class="narr"><summary></summary><span class="narr-text">${esc(inner)}</span></details>`;
+    last = m.index + m[0].length;
+  }
+  result += esc(text.slice(last));
+  return result;
+}
+
 // ── Multi-bubble rendering ────────────────────────────────────────────────
 // Split a long reply into natural paragraphs (double newline), each shown
 // as a separate bubble. Short consecutive messages feel like real chat.
@@ -527,7 +561,7 @@ function renderMessages(snap, force) {
         // group bubbles stay whole; 1-on-1 replies may split into paragraphs
         const bubbles = isGroupMsg ? [m.text] : splitBubbles(m.text);
         html += bubbles.map((b) =>
-          `<div class="row them">${avEl}<div class="them-col">${nameTag}<div class="bubble">${esc(b)}</div></div></div>`
+          `<div class="row them">${avEl}<div class="them-col">${nameTag}<div class="bubble">${renderBubbleHtml(b)}</div></div></div>`
         ).join("");
       }
     }
@@ -604,7 +638,7 @@ function typewriter(el, full, onDone) {
     if (box.scrollHeight - box.scrollTop - box.clientHeight < 120) box.scrollTop = box.scrollHeight;
     if (i >= full.length) {
       clearInterval(tick);
-      el.textContent = full;
+      el.innerHTML = renderBubbleHtml(full);
       typing = false;
       box.scrollTop = box.scrollHeight;
       if (onDone) onDone();
@@ -726,15 +760,21 @@ $("pEditChar").addEventListener("click", () => {
 });
 
 // ── Character editor ──────────────────────────────────────────────────────
+function freqLabel(v) {
+  return Number(v) <= 0 ? "从不主动" : `每 ${v} 小时`;
+}
 function openCharDialog(c) {
   $("charDialogTitle").textContent = c ? "编辑角色" : "新建角色";
   $("cId").value = c?.id || ""; $("cEmoji").value = c?.avatar_emoji || ""; $("cName").value = c?.name || "";
   $("cPersona").value = c?.persona_prompt || ""; $("cProvider").value = c?.provider || "deepseek";
   $("cModel").value = c?.model || ""; $("cKey").value = "";
   $("cDeep").checked = c ? c.deep_thinking !== 0 : true;
+  const freq = c?.checkin_interval_h ?? 8;
+  $("cFreq").value = freq; $("cFreqLabel").textContent = freqLabel(freq);
   $("cDelete").style.visibility = c ? "visible" : "hidden";
   $("charDialog").showModal();
 }
+$("cFreq").addEventListener("input", () => { $("cFreqLabel").textContent = freqLabel($("cFreq").value); });
 function editChar(id) { openCharDialog(characters.find((c) => c.id === id)); }
 $("addCharBtn").addEventListener("click", () => openCharDialog(null));
 $("cCancel").addEventListener("click", () => $("charDialog").close());
@@ -744,6 +784,7 @@ $("charForm").addEventListener("submit", async (e) => {
     id: $("cId").value || undefined, avatar_emoji: $("cEmoji").value || "🙂", name: $("cName").value.trim(),
     persona_prompt: $("cPersona").value, provider: $("cProvider").value, model: $("cModel").value.trim(),
     api_key_override: $("cKey").value.trim(), deep_thinking: $("cDeep").checked ? 1 : 0,
+    checkin_interval_h: Number($("cFreq").value),
   });
   $("charDialog").close(); await loadContacts();
 });

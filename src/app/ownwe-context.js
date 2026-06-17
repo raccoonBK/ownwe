@@ -75,9 +75,10 @@ function upsertCharacter(dbPath, char) {
   const id = char.id || randomUUID();
   const now = new Date().toISOString();
   const deepThinking = char.deep_thinking === undefined ? 1 : (char.deep_thinking ? 1 : 0);
+  const checkinIntervalH = char.checkin_interval_h === undefined ? 8 : Number(char.checkin_interval_h);
   getDb(dbPath).prepare(`
-    INSERT INTO ownwe_characters (id, name, codename, persona_prompt, provider, model, api_key_override, mode_bias, avatar_emoji, sort_order, deep_thinking, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO ownwe_characters (id, name, codename, persona_prompt, provider, model, api_key_override, mode_bias, avatar_emoji, sort_order, deep_thinking, checkin_interval_h, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       codename = excluded.codename,
@@ -89,6 +90,7 @@ function upsertCharacter(dbPath, char) {
       avatar_emoji = excluded.avatar_emoji,
       sort_order = excluded.sort_order,
       deep_thinking = excluded.deep_thinking,
+      checkin_interval_h = excluded.checkin_interval_h,
       updated_at = excluded.updated_at
   `).run(
     id,
@@ -102,6 +104,7 @@ function upsertCharacter(dbPath, char) {
     char.avatar_emoji || "🤖",
     char.sort_order || 0,
     deepThinking,
+    checkinIntervalH,
     now,
     now,
   );

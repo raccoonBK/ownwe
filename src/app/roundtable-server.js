@@ -40,7 +40,10 @@ const {
   createMoment,
   toggleLike,
   addComment,
+  toggleBlock,
+  listBlockedCharIds,
   reactToMoment,
+  maybeCharacterPostMoments,
 } = require("./ownwe-moments");
 const {
   maybeGenerateCheckins,
@@ -446,12 +449,86 @@ class RoundtableServer {
         .catch((err) => console.warn("[ownwe] checkin poll failed:", err.message));
     }, Math.max(1, everyMin) * 60_000);
     if (this._ownweCheckinTimer.unref) this._ownweCheckinTimer.unref();
+
+    // Character-posted moments (less frequent — every 3–6 hours on average)
+    const momentEveryMin = Number(process.env.OWNWE_CHAR_MOMENT_POLL_MIN || 60);
+    if (this._ownweCharMomentTimer) clearInterval(this._ownweCharMomentTimer);
+    this._ownweCharMomentTimer = setInterval(() => {
+      maybeCharacterPostMoments(this.config.dbPath, {})
+        .then((made) => { if (made) console.log(`[ownwe] ${made} character moment(s) posted`); })
+        .catch((err) => console.warn("[ownwe] char moment poll failed:", err.message));
+    }, Math.max(1, momentEveryMin) * 60_000);
+    if (this._ownweCharMomentTimer.unref) this._ownweCharMomentTimer.unref();
+  }
+
+  // ── Group chat ───────────────────────────────────────────────────────────
+  listGroups() {
+    try {
+      const db = require("../db/connection").getDb(this.config.dbPath);
+      return db.prepare("SELECT * FROM ownwe_groups ORDER BY created_at DESC").all().map((g) => ({
+        ...g,
+        charIds: JSON.parse(g.char_ids || "[]"),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  createGroup(body = {}) {
+    const name = normalizeText(body.name) || "群聊";
+    const charIds = Array.isArray(body.charIds) ? body.charIds.filter(Boolean) : [];
+    const emoji = normalizeText(body.avatarEmoji) || "👥";
+    if (charIds.length < 2) throw new Error("至少选择 2 个角色");
+    const id = `ownwe-group-${Date.now()}`;
+    const db = require("../db/connection").getDb(this.config.dbPath);
+    db.prepare(
+      "INSERT INTO ownwe_groups (id, name, char_ids, avatar_emoji) VALUES (?, ?, ?, ?)"
+    ).run(id, name, JSON.stringify(charIds), emoji);
+    return { id, name, charIds, avatarEmoji: emoji };
+  }
+
+  openGroupChat(groupId) {
+    const db = require("../db/connection").getDb(this.config.dbPath);
+    const group = db.prepare("SELECT * FROM ownwe_groups WHERE id = ?").get(groupId);
+    if (!group) throw new Error("group not found");
+    const charIds = JSON.parse(group.char_ids || "[]");
+    const title = `群聊·${group.name}`;
+    let topicId = "";
+    this.autoRunToken += 1;
+    this.store.update((draft) => {
+      topicId = openOrCreateBoundTopic(draft, {
+        topicId: group.topic_id || "",
+        topicTitle: title,
+        container: { type: "direct_chat", id: groupId, title: group.name },
+        systemLabel: `进入群聊「${group.name}」。`,
+      });
+      return draft;
+    });
+    // Update group's topic_id if new
+    const currentGroup = db.prepare("SELECT topic_id FROM ownwe_groups WHERE id = ?").get(groupId);
+    if (!currentGroup?.topic_id || currentGroup.topic_id !== topicId) {
+      db.prepare("UPDATE ownwe_groups SET topic_id = ? WHERE id = ?").run(topicId, groupId);
+    }
+    // Bind current char (round-robin) to claude slot
+    const idx = group.current_idx % charIds.length;
+    const charId = charIds[idx];
+    try {
+      db.prepare(`
+        INSERT INTO ownwe_character_bindings (topic_id, speaker, character_id)
+        VALUES (?, ?, ?)
+        ON CONFLICT(topic_id, speaker) DO UPDATE SET character_id = excluded.character_id, bound_at = datetime('now')
+      `).run(topicId, "claude", charId);
+    } catch (err) {
+      console.warn("[ownwe] openGroupChat bind failed:", err.message);
+    }
+    return topicId;
   }
 
   async close() {
     this.autoRunToken += 1;
     this.checkinPoller.close();
     if (this._ownweCheckinTimer) clearInterval(this._ownweCheckinTimer);
+    if (this._ownweCharMomentTimer) clearInterval(this._ownweCharMomentTimer);
     await this.runtimeHub.close();
     await new Promise((resolve) => this.server.close(resolve));
   }
@@ -659,6 +736,14 @@ class RoundtableServer {
     }
     if (req.method === "GET" && requestUrl.pathname === "/api/ownwe/unread") {
       this.sendJson(res, 200, unreadCounts(this.config.dbPath));
+      return;
+    }
+    if (req.method === "GET" && requestUrl.pathname === "/api/ownwe/moments/blocked") {
+      this.sendJson(res, 200, { blocked: listBlockedCharIds(this.config.dbPath) });
+      return;
+    }
+    if (req.method === "GET" && requestUrl.pathname === "/api/ownwe/groups") {
+      this.sendJson(res, 200, this.listGroups());
       return;
     }
 
@@ -923,8 +1008,36 @@ class RoundtableServer {
       case "/api/ownwe/moments/comment": {
         const text = normalizeText(body.text);
         if (!text || !body.momentId) { this.sendJson(res, 400, { error: "momentId and text required" }); return; }
-        addComment(this.config.dbPath, { momentId: Number(body.momentId), authorType: "user", authorId: "self", text });
+        addComment(this.config.dbPath, {
+          momentId: Number(body.momentId), authorType: "user", authorId: "self", text,
+          replyToId: Number(body.replyToId || 0), replyToName: normalizeText(body.replyToName || ""),
+        });
         this.sendJson(res, 200, { ok: true });
+        return;
+      }
+      case "/api/ownwe/moments/block": {
+        const charId = normalizeText(body.charId);
+        if (!charId) { this.sendJson(res, 400, { error: "charId required" }); return; }
+        const isBlocked = toggleBlock(this.config.dbPath, charId);
+        this.sendJson(res, 200, { ok: true, blocked: isBlocked });
+        return;
+      }
+      case "/api/ownwe/moments/char-post": {
+        // Manual trigger for character to post a moment (force=true bypasses timing)
+        const made = await maybeCharacterPostMoments(this.config.dbPath, { force: Boolean(body.force) });
+        this.sendJson(res, 200, { ok: true, made });
+        return;
+      }
+      case "/api/ownwe/groups/create": {
+        const group = this.createGroup(body);
+        this.sendJson(res, 200, group);
+        return;
+      }
+      case "/api/ownwe/open-group": {
+        const groupId = normalizeText(body.groupId);
+        if (!groupId) { this.sendJson(res, 400, { error: "groupId required" }); return; }
+        this.openGroupChat(groupId);
+        this.sendJson(res, 200, this.snapshot());
         return;
       }
       case "/api/ownwe/user-base/save": {

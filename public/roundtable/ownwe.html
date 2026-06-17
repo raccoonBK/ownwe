@@ -33,13 +33,15 @@
   .list-col.hidden { display: none; }
   .list-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 12px; flex-shrink: 0; }
   .list-head h2 { font-size: 16px; margin: 0; }
+  .list-head-btns { display: flex; gap: 6px; }
   .add-btn { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 17px; cursor: pointer; }
   .add-btn:hover { background: var(--list-active); }
   .scroll { flex: 1; overflow-y: auto; min-height: 0; }
   .contact { display: flex; align-items: center; gap: 12px; padding: 11px 16px; cursor: pointer; border-left: 3px solid transparent; }
   .contact:hover { background: var(--list); }
   .contact.active { background: var(--list-active); border-left-color: var(--accent); }
-  .avatar { width: 42px; height: 42px; border-radius: 10px; flex-shrink: 0; display: grid; place-items: center; font-size: 22px; background: #2c2c31; }
+  .avatar { width: 42px; height: 42px; border-radius: 10px; flex-shrink: 0; display: grid; place-items: center; font-size: 22px; background: #2c2c31; cursor: pointer; }
+  .avatar.group-av { background: #2a2238; }
   .ci { flex: 1; min-width: 0; }
   .ci .name { font-size: 15px; }
   .ci .sub { font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -52,16 +54,18 @@
   .view { display: none; flex-direction: column; height: 100%; min-height: 0; }
   .view.active { display: flex; }
 
-  .chat-head { padding: 16px 22px; border-bottom: 1px solid var(--line); flex-shrink: 0; font-size: 16px; }
-  .chat-head .status { font-size: 12px; color: var(--ink-2); margin-left: 8px; }
-  .messages { flex: 1; overflow-y: auto; padding: 22px; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+  .chat-head { padding: 14px 22px; border-bottom: 1px solid var(--line); flex-shrink: 0; display: flex; align-items: center; gap: 10px; }
+  .chat-head .chat-av { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; font-size: 18px; background: #2c2c31; cursor: pointer; flex-shrink: 0; }
+  .chat-head .chat-title { font-size: 16px; flex: 1; }
+  .chat-head .status { font-size: 12px; color: var(--ink-2); }
+  .messages { flex: 1; overflow-y: auto; padding: 22px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
   .placeholder { margin: auto; color: var(--ink-2); text-align: center; line-height: 2; }
   .placeholder .big { font-size: 40px; opacity: .5; }
   .row { display: flex; gap: 10px; align-items: flex-start; max-width: 72%; }
   .row.them { align-self: flex-start; }
   .row.me { align-self: flex-end; flex-direction: row-reverse; }
-  .row .av { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; display: grid; place-items: center; font-size: 18px; background: #2c2c31; }
-  .bubble { padding: 9px 13px; border-radius: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+  .row .av { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; display: grid; place-items: center; font-size: 18px; background: #2c2c31; cursor: pointer; }
+  .bubble { padding: 9px 13px; border-radius: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
   .row.them .bubble { background: var(--them); color: var(--them-ink); border-top-left-radius: 4px; }
   .row.me .bubble { background: var(--me); color: var(--me-ink); border-top-right-radius: 4px; }
   .sys-note { align-self: center; color: var(--ink-2); font-size: 12px; background: rgba(255,255,255,.04); padding: 4px 12px; border-radius: 10px; }
@@ -79,7 +83,7 @@
   .send-btn:disabled { opacity: .4; }
 
   /* ── Moments ── */
-  .panel-head { padding: 16px 24px; border-bottom: 1px solid var(--line); font-size: 16px; flex-shrink: 0; }
+  .panel-head { padding: 16px 24px; border-bottom: 1px solid var(--line); font-size: 16px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
   .panel-scroll { flex: 1; overflow-y: auto; padding: 20px 24px; min-height: 0; }
   .compose { background: var(--sidebar); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 22px; }
   .compose textarea { width: 100%; resize: vertical; min-height: 60px; background: var(--list); border: 1px solid var(--line); border-radius: 10px; color: var(--ink); padding: 11px; font-family: inherit; font-size: 14px; }
@@ -91,10 +95,18 @@
   .moment .meta { font-size: 12px; color: var(--ink-2); display: flex; gap: 16px; align-items: center; }
   .moment .meta button { background: none; border: none; color: var(--ink-2); cursor: pointer; font-size: 12px; padding: 0; }
   .moment .meta button:hover { color: var(--accent); }
+  .moment .meta .more-btn { position: relative; }
+  .more-menu { position: absolute; bottom: 22px; right: 0; background: var(--sidebar); border: 1px solid var(--line); border-radius: 10px; min-width: 130px; z-index: 50; box-shadow: 0 4px 20px rgba(0,0,0,.4); }
+  .more-menu button { display: block; width: 100%; text-align: left; padding: 10px 14px; background: none; border: none; color: var(--ink); cursor: pointer; font-size: 13px; }
+  .more-menu button:hover { background: var(--list-active); }
   .likes { font-size: 12px; color: var(--ink-2); background: var(--list); border-radius: 8px; padding: 6px 10px; margin-top: 8px; }
-  .comments { margin-top: 8px; }
-  .comment { font-size: 13px; padding: 3px 0; }
+  .comments { margin-top: 8px; background: var(--list); border-radius: 8px; padding: 6px 10px; }
+  .comment { font-size: 13px; padding: 3px 0; display: flex; justify-content: space-between; align-items: baseline; }
+  .comment-body { flex: 1; }
   .comment .who { color: var(--accent); }
+  .comment .reply-who { color: var(--ink-2); }
+  .comment-reply-btn { background: none; border: none; color: var(--ink-2); font-size: 11px; cursor: pointer; padding: 0 0 0 6px; flex-shrink: 0; }
+  .comment-reply-btn:hover { color: var(--accent); }
   .comment-add { display: flex; gap: 8px; margin-top: 8px; }
   .comment-add input { flex: 1; background: var(--list); border: 1px solid var(--line); border-radius: 8px; color: var(--ink); padding: 6px 10px; font-size: 13px; font-family: inherit; }
 
@@ -108,7 +120,7 @@
   .field-row { display: flex; gap: 12px; }
   .field-row .field { flex: 1; }
 
-  /* ── Dialog / buttons ── */
+  /* ── Dialogs / buttons ── */
   dialog { background: var(--sidebar); color: var(--ink); border: 1px solid var(--line); border-radius: 16px; padding: 0; width: min(560px, 94vw); }
   dialog::backdrop { background: rgba(0,0,0,.6); }
   .modal-body { padding: 22px; display: flex; flex-direction: column; gap: 14px; max-height: 86vh; overflow-y: auto; }
@@ -122,6 +134,35 @@
   .btn.primary { background: var(--accent); border-color: var(--accent); color: #08121f; }
   .btn.danger { border-color: var(--danger); color: var(--danger); }
   .grow { flex: 1; }
+
+  /* ── Profile panel dialog ── */
+  #profileDialog { width: min(380px, 94vw); }
+  .profile-hero { background: linear-gradient(135deg, #1a2a3a 0%, #1e1e24 100%); border-radius: 10px 10px 0 0; padding: 24px 22px 20px; display: flex; gap: 14px; align-items: center; }
+  .profile-hero .big-av { width: 62px; height: 62px; border-radius: 14px; background: #2c2c31; display: grid; place-items: center; font-size: 32px; flex-shrink: 0; }
+  .profile-hero .info h2 { margin: 0 0 4px; font-size: 18px; }
+  .profile-hero .info .sub { font-size: 12px; color: var(--ink-2); }
+  .profile-section { padding: 14px 22px; border-bottom: 1px solid var(--line); }
+  .profile-section h4 { margin: 0 0 10px; font-size: 12px; color: var(--ink-2); text-transform: uppercase; letter-spacing: .06em; }
+  .tag-cloud { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag { background: var(--list); border-radius: 20px; padding: 3px 10px; font-size: 12px; color: var(--ink-2); }
+  .tag.certain { color: var(--accent); }
+  .profile-kv { display: flex; flex-direction: column; gap: 6px; }
+  .profile-kv .kv { font-size: 13px; }
+  .profile-kv .kv .k { color: var(--ink-2); margin-right: 6px; }
+  .profile-actions { padding: 14px 22px; display: flex; gap: 10px; }
+
+  /* ── Group chat picker ── */
+  .char-check-list { display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto; }
+  .char-check-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; cursor: pointer; }
+  .char-check-item:hover { background: var(--list-active); }
+  .char-check-item input[type=checkbox] { width: auto; }
+
+  /* Multi-bubble fade-in */
+  @keyframes bubblePop {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .bubble-new { animation: bubblePop 0.18s ease-out; }
 
   @media (max-width: 720px) {
     .list-col { width: 100%; }
@@ -142,11 +183,14 @@
     <button class="rail-btn" data-tab="settings" title="设置">⚙️</button>
   </nav>
 
-  <!-- List column (chats / contacts) -->
+  <!-- List column -->
   <aside class="list-col" id="listCol">
     <div class="list-head">
       <h2 id="listTitle">聊天</h2>
-      <button class="add-btn" id="addCharBtn" title="新建角色">＋</button>
+      <div class="list-head-btns">
+        <button class="add-btn" id="addGroupBtn" title="新建群聊">👥</button>
+        <button class="add-btn" id="addCharBtn" title="新建角色">＋</button>
+      </div>
     </div>
     <div class="scroll" id="contacts"><div class="empty">还没有角色。<br>点右上角 ＋ 新建一个。</div></div>
   </aside>
@@ -155,7 +199,11 @@
   <section class="main-col">
     <!-- Chat view -->
     <div class="view active" id="view-chat">
-      <div class="chat-head"><span id="chatTitle">选择一个角色开始聊天</span><span class="status" id="chatStatus"></span></div>
+      <div class="chat-head">
+        <div class="chat-av" id="chatAv" style="display:none">🙂</div>
+        <span class="chat-title" id="chatTitle">选择一个角色开始聊天</span>
+        <span class="status" id="chatStatus"></span>
+      </div>
       <div class="messages" id="messages"><div class="placeholder"><div class="big">☾</div>左边选一个角色，<br>或新建一个。</div></div>
       <div class="composer" id="composer" style="display:none">
         <div id="attachPreview" class="attach-preview"></div>
@@ -171,7 +219,10 @@
 
     <!-- Moments view -->
     <div class="view" id="view-moments">
-      <div class="panel-head">朋友圈</div>
+      <div class="panel-head">
+        <span>朋友圈</span>
+        <button class="btn" id="charPostBtn" title="触发角色发圈" style="font-size:12px;padding:5px 12px">角色发圈</button>
+      </div>
       <div class="panel-scroll">
         <div class="compose">
           <textarea id="momentInput" placeholder="分享点什么…"></textarea>
@@ -183,7 +234,7 @@
 
     <!-- Settings view -->
     <div class="view" id="view-settings">
-      <div class="panel-head">设置</div>
+      <div class="panel-head"><span>设置</span></div>
       <div class="settings-body">
         <h3>用户百科</h3>
         <div class="hint">客观信息，所有角色共享。每个角色还会基于相处形成自己的理解。</div>
@@ -230,7 +281,7 @@
     <label><span>专属 API Key（留空则用服务器上对应 provider 的 key）</span><input id="cKey" type="password" placeholder="留空即可"></label>
     <label style="display:flex;align-items:center;gap:8px;flex-direction:row">
       <input type="checkbox" id="cDeep" checked style="width:auto">
-      <span style="margin:0">默认开深度思考（用更强的模型，回复更像人；关掉则简单问题用便宜模型省钱）</span>
+      <span style="margin:0">默认开深度思考（回复更真实；关掉可省钱）</span>
     </label>
     <div class="modal-foot">
       <button type="button" class="btn danger" id="cDelete" style="visibility:hidden">删除</button>
@@ -242,6 +293,58 @@
   </form>
 </dialog>
 
+<!-- Group creator -->
+<dialog id="groupDialog">
+  <div class="modal-body">
+    <h3>新建群聊</h3>
+    <label><span>群名</span><input id="gName" placeholder="我们的群"></label>
+    <label><span>群头像 emoji</span><input id="gEmoji" maxlength="2" placeholder="👥" style="width:80px;text-align:center"></label>
+    <div>
+      <div style="font-size:12px;color:var(--ink-2);margin-bottom:8px">选择角色（至少 2 个）</div>
+      <div class="char-check-list" id="groupCharList"></div>
+    </div>
+    <div class="modal-foot">
+      <span class="grow"></span>
+      <button class="btn" id="gCancel">取消</button>
+      <button class="btn primary" id="gCreate">创建</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Profile panel -->
+<dialog id="profileDialog">
+  <div style="max-height:86vh;overflow-y:auto">
+    <div class="profile-hero">
+      <div class="big-av" id="pAv">🙂</div>
+      <div class="info">
+        <h2 id="pName"></h2>
+        <div class="sub" id="pProvider"></div>
+        <div class="sub" id="pCreated" style="margin-top:3px"></div>
+      </div>
+    </div>
+    <div class="profile-section" id="pPersonaSection">
+      <h4>人格摘要</h4>
+      <div id="pPersona" style="font-size:13px;color:var(--ink-2);line-height:1.6"></div>
+    </div>
+    <div class="profile-section" id="pTagsSection">
+      <h4>她/他眼中的我 — 标签</h4>
+      <div class="tag-cloud" id="pTags"></div>
+    </div>
+    <div class="profile-section" id="pViewsSection">
+      <h4>她/他记得我说过</h4>
+      <div class="profile-kv" id="pViews"></div>
+    </div>
+    <div class="profile-section" id="pKwSection">
+      <h4>关键词</h4>
+      <div class="tag-cloud" id="pKws"></div>
+    </div>
+    <div class="profile-actions">
+      <button class="btn grow" id="pEditChar">编辑角色设定</button>
+      <button class="btn" id="pClose">关闭</button>
+    </div>
+  </div>
+</dialog>
+
 <script>
 const $ = (id) => document.getElementById(id);
 const api = (path, body) => fetch(path, body
@@ -251,13 +354,18 @@ const esc = (s) => String(s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<"
 const provLabel = (p) => ({ anthropic: "Claude", deepseek: "DeepSeek", openai: "OpenAI", gemini: "Gemini", kimi: "Kimi" }[p] || "");
 
 let characters = [];
+let groups = [];
 let activeCharId = null;
+let activeGroupId = null;
 let pollTimer = null;
 let lastKey = "";
 let currentTab = "chats";
 let unread = {};
 let typing = false;
+let blockedCharIds = new Set();
 const typedIds = new Set();
+// Track last seen bubble count per message id for multi-bubble delivery
+const shownBubbles = {};
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 document.querySelectorAll(".rail-btn").forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
@@ -276,29 +384,53 @@ function switchTab(tab) {
 
 // ── Contacts ──────────────────────────────────────────────────────────────
 async function loadContacts() {
-  characters = await api("/api/ownwe/characters");
+  [characters, groups] = await Promise.all([
+    api("/api/ownwe/characters"),
+    api("/api/ownwe/groups").catch(() => []),
+  ]);
   const box = $("contacts");
-  if (!characters.length) { box.innerHTML = '<div class="empty">还没有角色。<br>点右上角 ＋ 新建一个。</div>'; return; }
-  box.innerHTML = characters.map((c) => `
-    <div class="contact ${c.id === activeCharId ? "active" : ""}" data-id="${c.id}">
-      <div class="avatar">${c.avatar_emoji || "🙂"}</div>
-      <div class="ci"><div class="name">${esc(c.name)}</div><div class="sub">${esc(provLabel(c.provider))}</div></div>
-      ${unread[c.id] ? '<div class="unread-dot"></div>' : ""}
-    </div>`).join("");
+  if (!characters.length && !groups.length) {
+    box.innerHTML = '<div class="empty">还没有角色。<br>点右上角 ＋ 新建一个，<br>或 👥 新建群聊。</div>';
+    return;
+  }
+  const all = [
+    ...groups.map((g) => renderContactRow({ id: g.id, name: g.name, emoji: g.avatarEmoji || g.avatar_emoji || "👥", sub: `群聊 · ${(g.charIds || g.char_ids_parsed || []).length} 人`, isGroup: true })),
+    ...characters.map((c) => renderContactRow({ id: c.id, name: c.name, emoji: c.avatar_emoji || "🙂", sub: provLabel(c.provider), isGroup: false })),
+  ];
+  box.innerHTML = all.join("");
   box.querySelectorAll(".contact").forEach((el) => {
-    el.addEventListener("click", () => openChat(el.dataset.id));
-    el.addEventListener("dblclick", () => editChar(el.dataset.id));
+    el.addEventListener("click", () => {
+      if (el.dataset.group === "1") openGroupChat(el.dataset.id);
+      else openChat(el.dataset.id);
+    });
+    el.addEventListener("dblclick", () => {
+      if (el.dataset.group !== "1") editChar(el.dataset.id);
+    });
   });
+}
+
+function renderContactRow({ id, name, emoji, sub, isGroup }) {
+  const isActive = isGroup ? id === activeGroupId : id === activeCharId;
+  const hasUnread = !isGroup && unread[id];
+  return `<div class="contact ${isActive ? "active" : ""}" data-id="${id}" data-group="${isGroup ? 1 : 0}">
+    <div class="avatar${isGroup ? " group-av" : ""}">${emoji}</div>
+    <div class="ci"><div class="name">${esc(name)}</div><div class="sub">${esc(sub)}</div></div>
+    ${hasUnread ? '<div class="unread-dot"></div>' : ""}
+  </div>`;
 }
 
 // ── Chat ──────────────────────────────────────────────────────────────────
 async function openChat(charId) {
   activeCharId = charId;
+  activeGroupId = null;
   const c = characters.find((x) => x.id === charId);
   if (currentTab === "contacts") switchTab("chats");
-  document.querySelectorAll(".contact").forEach((el) => el.classList.toggle("active", el.dataset.id === charId));
+  document.querySelectorAll(".contact").forEach((el) => el.classList.toggle("active", el.dataset.id === charId && el.dataset.group !== "1"));
   $("shell").classList.add("in-chat");
   $("chatTitle").textContent = c ? `${c.avatar_emoji || ""} ${c.name}` : "";
+  $("chatAv").textContent = c ? (c.avatar_emoji || "🙂") : "🙂";
+  $("chatAv").style.display = "";
+  $("chatAv").dataset.charId = charId;
   $("composer").style.display = "";
   $("messages").innerHTML = '<div class="placeholder">正在进入…</div>';
   lastKey = "";
@@ -306,25 +438,69 @@ async function openChat(charId) {
   renderMessages(snap, true);
   startPolling();
   $("input").focus();
+  delete unread[charId];
+  setTimeout(refreshUnread, 1500);
+}
+
+async function openGroupChat(groupId) {
+  activeGroupId = groupId;
+  activeCharId = null;
+  const g = groups.find((x) => x.id === groupId);
+  if (currentTab === "contacts") switchTab("chats");
+  document.querySelectorAll(".contact").forEach((el) => el.classList.toggle("active", el.dataset.id === groupId && el.dataset.group === "1"));
+  $("shell").classList.add("in-chat");
+  $("chatTitle").textContent = g ? `${g.avatarEmoji || g.avatar_emoji || "👥"} ${g.name}` : "群聊";
+  $("chatAv").textContent = g ? (g.avatarEmoji || g.avatar_emoji || "👥") : "👥";
+  $("chatAv").style.display = "";
+  $("chatAv").dataset.charId = "";
+  $("composer").style.display = "";
+  $("messages").innerHTML = '<div class="placeholder">正在进入…</div>';
+  lastKey = "";
+  const snap = await api("/api/ownwe/open-group", { groupId });
+  renderMessages(snap, true);
+  startPolling();
+  $("input").focus();
+}
+
+// ── Multi-bubble rendering ────────────────────────────────────────────────
+// Split a long reply into natural paragraphs (double newline), each shown
+// as a separate bubble. Short consecutive messages feel like real chat.
+function splitBubbles(text) {
+  if (!text) return [""];
+  const parts = text.split(/\n{2,}/).map((s) => s.trim()).filter(Boolean);
+  // Only split if we have multiple meaningful parts
+  if (parts.length <= 1) return [text];
+  // Don't split if any individual part is very long (single paragraph essay)
+  if (parts.some((p) => p.length > 300)) return [text];
+  return parts;
 }
 
 function renderMessages(snap, force) {
-  if (typing && !force) return; // don't clobber an in-progress typewriter
+  if (typing && !force) return;
   const msgs = (snap.messages || []).filter((m) => ["user", "claude", "system"].includes(m.speaker));
   const running = snap.running || msgs.some((m) => m.speaker === "claude" && m.pending);
   const key = msgs.map((m) => m.id + ":" + (m.text || "").length + ":" + (m.pending ? 1 : 0)).join("|") + ":" + running;
   if (!force && key === lastKey) return;
   lastKey = key;
-  const c = characters.find((x) => x.id === activeCharId);
+
+  const charId = activeCharId;
+  const c = characters.find((x) => x.id === charId);
   const av = c ? (c.avatar_emoji || "🙂") : "🙂";
   const box = $("messages");
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
 
-  // On initial/forced load, treat all existing replies as already shown.
-  if (force) msgs.forEach((m) => { if (m.speaker === "claude" && m.text) typedIds.add(m.id); });
-  // Animate the newest completed reply if we haven't shown it yet.
+  if (force) msgs.forEach((m) => {
+    if (m.speaker === "claude" && m.text) {
+      typedIds.add(m.id);
+      shownBubbles[m.id] = splitBubbles(m.text).length;
+    }
+  });
+
   const last = msgs[msgs.length - 1];
   const animate = !force && last && last.speaker === "claude" && last.text && !last.pending && !typedIds.has(last.id);
+  // Detect new bubble(s) added to an already-typed message (shouldn't happen but safety)
+  const newBubble = !force && last && last.speaker === "claude" && last.text && typedIds.has(last.id)
+    && (shownBubbles[last.id] || 0) < splitBubbles(last.text).length;
 
   let html = "";
   for (const m of msgs) {
@@ -332,11 +508,18 @@ function renderMessages(snap, force) {
       if (m.transcript === false || /injected|context|summary/i.test(m.text || "")) continue;
       html += `<div class="sys-note">${esc(m.text)}</div>`;
     } else if (m.speaker === "user") {
-      html += `<div class="row me"><div class="av">我</div><div class="bubble">${esc(m.text)}</div></div>`;
+      html += `<div class="row me"><div class="av">我</div><div class="bubble">${buildUserBubbleContent(m)}</div></div>`;
     } else {
       const isAnim = animate && m === last;
-      const txt = isAnim ? "" : (m.text ? esc(m.text) : '<span class="typing">正在输入…</span>');
-      html += `<div class="row them"><div class="av">${av}</div><div class="bubble"${isAnim ? ' data-anim="1"' : ""}>${txt}</div></div>`;
+      if (isAnim || (m.pending && !m.text)) {
+        const txt = isAnim ? "" : '<span class="typing">正在输入…</span>';
+        html += `<div class="row them"><div class="av" data-char="${charId || ""}" onclick="openProfilePanel('${charId || ""}')">${av}</div><div class="bubble"${isAnim ? ' data-anim="1"' : ""}>${txt}</div></div>`;
+      } else if (m.text) {
+        const bubbles = splitBubbles(m.text);
+        html += bubbles.map((b, i) =>
+          `<div class="row them"><div class="av" data-char="${charId || ""}" onclick="openProfilePanel('${charId || ""}')">${av}</div><div class="bubble">${esc(b)}</div></div>`
+        ).join("");
+      }
     }
   }
   if (running && !msgs.some((m) => m.speaker === "claude" && m.pending && !m.text)) {
@@ -348,16 +531,50 @@ function renderMessages(snap, force) {
 
   if (animate) {
     typedIds.add(last.id);
-    const el = box.querySelector('[data-anim="1"]');
-    if (el) typewriter(el, last.text);
+    shownBubbles[last.id] = splitBubbles(last.text).length;
+    // Animate the first bubble; remaining bubbles appear one by one with delay
+    const bubbles = splitBubbles(last.text);
+    const allBubbleEls = box.querySelectorAll(".row.them .bubble");
+    // Last N bubbles are the new ones
+    const newEls = Array.from(allBubbleEls).slice(-bubbles.length);
+    if (newEls.length > 0) {
+      // Hide all but first, typewrite first, then reveal rest sequentially
+      for (let i = 1; i < newEls.length; i++) newEls[i].parentElement.style.opacity = "0";
+      typewriter(newEls[0], bubbles[0], () => {
+        revealNextBubble(newEls, bubbles, 1);
+      });
+    }
   }
 }
 
-// Reveal a reply at a human-ish pace instead of dumping it instantly.
-function typewriter(el, full) {
+function revealNextBubble(els, texts, idx) {
+  if (idx >= els.length) return;
+  const el = els[idx];
+  el.parentElement.style.opacity = "";
+  el.parentElement.classList.add("bubble-new");
+  // Show typing indicator briefly then reveal text
+  el.innerHTML = '<span class="typing">正在输入…</span>';
+  const delay = 400 + Math.random() * 400;
+  setTimeout(() => {
+    typewriter(el, texts[idx], () => revealNextBubble(els, texts, idx + 1));
+  }, delay);
+}
+
+function buildUserBubbleContent(m) {
+  let html = "";
+  if (Array.isArray(m.attachments)) {
+    for (const att of m.attachments) {
+      if (att.url) html += `<img src="${esc(att.url)}" style="max-width:160px;border-radius:8px;display:block;margin-bottom:4px">`;
+    }
+  }
+  html += esc(m.text || "");
+  return html;
+}
+
+function typewriter(el, full, onDone) {
   typing = true;
   const box = $("messages");
-  const step = Math.max(1, Math.ceil(full.length / 200)); // cap very long messages
+  const step = Math.max(1, Math.ceil(full.length / 200));
   let i = 0;
   const tick = setInterval(() => {
     i += step;
@@ -368,6 +585,7 @@ function typewriter(el, full) {
       el.textContent = full;
       typing = false;
       box.scrollTop = box.scrollHeight;
+      if (onDone) onDone();
     }
   }, 45);
 }
@@ -381,8 +599,7 @@ function startPolling() {
 }
 function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
 
-let pendingImages = []; // data URLs to send with the next message
-
+let pendingImages = [];
 function renderAttachPreview() {
   const box = $("attachPreview");
   box.innerHTML = pendingImages.map((url, i) =>
@@ -396,9 +613,7 @@ $("fileInput").addEventListener("change", (e) => {
   const files = Array.from(e.target.files || []).slice(0, 4);
   for (const f of files) {
     const reader = new FileReader();
-    reader.onload = () => {
-      if (pendingImages.length < 4) { pendingImages.push(reader.result); renderAttachPreview(); }
-    };
+    reader.onload = () => { if (pendingImages.length < 4) { pendingImages.push(reader.result); renderAttachPreview(); } };
     reader.readAsDataURL(f);
   }
   e.target.value = "";
@@ -408,7 +623,7 @@ async function send() {
   const input = $("input");
   const text = input.value.trim();
   const imgs = pendingImages.slice();
-  if ((!text && !imgs.length) || !activeCharId) return;
+  if ((!text && !imgs.length) || (!activeCharId && !activeGroupId)) return;
   input.value = "";
   pendingImages = []; renderAttachPreview();
   const box = $("messages");
@@ -417,13 +632,68 @@ async function send() {
   box.scrollTop = box.scrollHeight;
   lastKey = "";
   try {
-    await fetch("/api/user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text || "（看图）", target: "claude", images: imgs }) });
+    await fetch("/api/user", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text || "（看图）", target: "claude", images: imgs }) });
   } catch (e) { alert("发送失败：" + e.message); }
 }
 $("sendBtn").addEventListener("click", send);
 $("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
 
-// ── Character editor ─────────────────────────────────────────────────────
+// ── Profile panel ─────────────────────────────────────────────────────────
+$("chatAv").addEventListener("click", () => {
+  if ($("chatAv").dataset.charId) openProfilePanel($("chatAv").dataset.charId);
+});
+$("pClose").addEventListener("click", () => $("profileDialog").close());
+
+let _profileCharId = null;
+async function openProfilePanel(charId) {
+  if (!charId) return;
+  _profileCharId = charId;
+  const c = characters.find((x) => x.id === charId);
+  if (!c) return;
+  $("pAv").textContent = c.avatar_emoji || "🙂";
+  $("pName").textContent = c.name;
+  $("pProvider").textContent = provLabel(c.provider) || "";
+  $("pCreated").textContent = c.created_at ? `添加于 ${fmtTime(c.created_at)}` : "";
+
+  const persona = (c.persona_prompt || "").slice(0, 120);
+  $("pPersona").textContent = persona ? (persona + (c.persona_prompt.length > 120 ? "…" : "")) : "（未设置人格）";
+
+  // Load the character's picture of the user
+  try {
+    const prof = await api(`/api/ownwe/profile?charId=${encodeURIComponent(charId)}`);
+    const tags = prof.tags || [];
+    $("pTags").innerHTML = tags.length
+      ? tags.map((t) => `<span class="tag ${t.certain ? "certain" : ""}">${esc(t.text)}</span>`).join("")
+      : '<span style="color:var(--ink-2);font-size:13px">聊得更多才会形成印象</span>';
+
+    const views = (prof.core_views || []).concat(prof.recent_views || []).slice(0, 5);
+    $("pViews").innerHTML = views.length
+      ? views.map((v) => `<div class="kv"><span class="k">•</span>${esc(v.text)}</div>`).join("")
+      : '<div style="color:var(--ink-2);font-size:13px">还没有记录</div>';
+
+    const kws = prof.keywords || [];
+    $("pKws").innerHTML = kws.length
+      ? kws.slice(0, 10).map((k) => `<span class="tag">${esc(k)}</span>`).join("")
+      : '<span style="color:var(--ink-2);font-size:13px">暂无</span>';
+
+    $("pTagsSection").style.display = "";
+    $("pViewsSection").style.display = "";
+    $("pKwSection").style.display = tags.length || kws.length ? "" : "none";
+  } catch {
+    $("pTagsSection").style.display = "none";
+    $("pViewsSection").style.display = "none";
+    $("pKwSection").style.display = "none";
+  }
+
+  $("profileDialog").showModal();
+}
+$("pEditChar").addEventListener("click", () => {
+  $("profileDialog").close();
+  if (_profileCharId) editChar(_profileCharId);
+});
+
+// ── Character editor ──────────────────────────────────────────────────────
 function openCharDialog(c) {
   $("charDialogTitle").textContent = c ? "编辑角色" : "新建角色";
   $("cId").value = c?.id || ""; $("cEmoji").value = c?.avatar_emoji || ""; $("cName").value = c?.name || "";
@@ -454,43 +724,141 @@ $("cDelete").addEventListener("click", async () => {
   await loadContacts();
 });
 
-// ── Moments ──────────────────────────────────────────────────────────────
+// ── Group chat ────────────────────────────────────────────────────────────
+$("addGroupBtn").addEventListener("click", () => {
+  if (!characters.length) { alert("先创建至少 2 个角色再建群。"); return; }
+  $("gName").value = ""; $("gEmoji").value = "👥";
+  $("groupCharList").innerHTML = characters.map((c) => `
+    <label class="char-check-item">
+      <input type="checkbox" value="${c.id}">
+      <span>${c.avatar_emoji || "🙂"} ${esc(c.name)}</span>
+    </label>`).join("");
+  $("groupDialog").showModal();
+});
+$("gCancel").addEventListener("click", () => $("groupDialog").close());
+$("gCreate").addEventListener("click", async () => {
+  const name = $("gName").value.trim() || "我们的群";
+  const emoji = $("gEmoji").value || "👥";
+  const charIds = Array.from($("groupCharList").querySelectorAll("input:checked")).map((el) => el.value);
+  if (charIds.length < 2) { alert("请至少勾选 2 个角色"); return; }
+  await api("/api/ownwe/groups/create", { name, avatarEmoji: emoji, charIds });
+  $("groupDialog").close();
+  await loadContacts();
+});
+
+// ── Moments ───────────────────────────────────────────────────────────────
+let openMoreMenu = null;
 async function loadMoments() {
   const list = await api("/api/ownwe/moments");
+  const blocked = await api("/api/ownwe/moments/blocked").then((r) => new Set(r.blocked || [])).catch(() => new Set());
+  blockedCharIds = blocked;
   const box = $("momentsList");
   if (!list.length) { box.innerHTML = '<div class="empty">还没有朋友圈。发布第一条吧。</div>'; return; }
-  box.innerHTML = list.map((m) => `
-    <div class="moment">
+  box.innerHTML = list.map((m) => renderMoment(m)).join("");
+  attachMomentHandlers(box);
+}
+
+function renderMoment(m) {
+  const isMe = m.author_type === "user";
+  const moreBtn = !isMe ? `
+    <div class="more-btn" style="position:relative">
+      <button data-more="${m.id}" data-charid="${m.author_id || ""}">···</button>
+    </div>` : "";
+  const likeNames = (m.likeNames || []);
+  return `
+    <div class="moment" data-mid="${m.id}">
       <div class="avatar">${m.authorEmoji}</div>
       <div class="body">
         <div class="name">${esc(m.authorName)}</div>
         <div class="text">${esc(m.text)}</div>
         <div class="meta">
           <span>${fmtTime(m.created_at)}</span>
-          <button data-like="${m.id}">${m.likes.includes("self") ? "❤️ 已赞" : "🤍 赞"}</button>
+          <button data-like="${m.id}">${(m.likes || []).includes("self") ? "❤️ 已赞" : "🤍 赞"}</button>
           <button data-cmt="${m.id}">💬 评论</button>
+          ${moreBtn}
         </div>
-        ${m.likeNames.length ? `<div class="likes">❤️ ${m.likeNames.map(esc).join("、")}</div>` : ""}
-        ${m.comments.length ? `<div class="comments">${m.comments.map((c) => `<div class="comment"><span class="who">${esc(c.authorName)}：</span>${esc(c.text)}</div>`).join("")}</div>` : ""}
+        ${likeNames.length ? `<div class="likes">❤️ ${likeNames.map(esc).join("、")}</div>` : ""}
+        ${(m.comments || []).length ? `<div class="comments">${renderComments(m.comments)}</div>` : ""}
         <div class="comment-add" data-add="${m.id}" style="display:none">
-          <input placeholder="说点什么…"><button class="btn" data-send="${m.id}">发送</button>
+          <input id="cmtInput-${m.id}" placeholder="说点什么…">
+          <button class="btn" data-send="${m.id}">发送</button>
         </div>
       </div>
-    </div>`).join("");
+    </div>`;
+}
+
+function renderComments(comments) {
+  return comments.map((c) => {
+    const replyPart = c.replyToName ? `<span class="reply-who">回复 ${esc(c.replyToName)}：</span>` : "";
+    return `<div class="comment" data-cmtid="${c.id}" data-cmtname="${esc(c.authorName)}">
+      <div class="comment-body"><span class="who">${esc(c.authorName)}：</span>${replyPart}${esc(c.text)}</div>
+      <button class="comment-reply-btn" data-reply="${c.id}">回复</button>
+    </div>`;
+  }).join("");
+}
+
+function attachMomentHandlers(box) {
   box.querySelectorAll("[data-like]").forEach((b) => b.addEventListener("click", async () => {
     await api("/api/ownwe/moments/like", { momentId: Number(b.dataset.like) }); loadMoments();
   }));
   box.querySelectorAll("[data-cmt]").forEach((b) => b.addEventListener("click", () => {
     const add = box.querySelector(`[data-add="${b.dataset.cmt}"]`);
-    if (add) { add.style.display = add.style.display === "none" ? "flex" : "none"; add.querySelector("input")?.focus(); }
+    const inp = $(`cmtInput-${b.dataset.cmt}`);
+    if (add) {
+      const showing = add.style.display !== "none";
+      add.style.display = showing ? "none" : "flex";
+      if (!showing && inp) { inp.dataset.replyToId = ""; inp.dataset.replyToName = ""; inp.placeholder = "说点什么…"; inp.focus(); }
+    }
   }));
   box.querySelectorAll("[data-send]").forEach((b) => b.addEventListener("click", async () => {
-    const wrap = box.querySelector(`[data-add="${b.dataset.send}"]`);
-    const text = wrap?.querySelector("input")?.value.trim();
+    const mid = b.dataset.send;
+    const inp = $(`cmtInput-${mid}`);
+    const text = inp?.value.trim();
     if (!text) return;
-    await api("/api/ownwe/moments/comment", { momentId: Number(b.dataset.send), text }); loadMoments();
+    const replyToId = inp.dataset.replyToId ? Number(inp.dataset.replyToId) : 0;
+    const replyToName = inp.dataset.replyToName || "";
+    await api("/api/ownwe/moments/comment", { momentId: Number(mid), text, replyToId, replyToName });
+    loadMoments();
+  }));
+  box.querySelectorAll("[data-reply]").forEach((b) => b.addEventListener("click", () => {
+    const cmtEl = b.closest(".comment");
+    const mid = cmtEl?.closest(".moment")?.dataset.mid;
+    if (!mid) return;
+    const authorName = cmtEl.dataset.cmtname || "";
+    const cmtId = b.dataset.reply;
+    const add = box.querySelector(`[data-add="${mid}"]`);
+    const inp = $(`cmtInput-${mid}`);
+    if (add && inp) {
+      add.style.display = "flex";
+      inp.dataset.replyToId = cmtId;
+      inp.dataset.replyToName = authorName;
+      inp.placeholder = `回复 ${authorName}…`;
+      inp.focus();
+    }
+  }));
+  box.querySelectorAll("[data-more]").forEach((b) => b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (openMoreMenu) { openMoreMenu.remove(); openMoreMenu = null; }
+    const charId = b.dataset.charid;
+    const isBlocked = blockedCharIds.has(charId);
+    const menu = document.createElement("div");
+    menu.className = "more-menu";
+    menu.innerHTML = `
+      <button data-block="${charId}">${isBlocked ? "✅ 已屏蔽，点击取消" : "🚫 不看TA的朋友圈"}</button>`;
+    b.parentElement.appendChild(menu);
+    openMoreMenu = menu;
+    menu.querySelector("[data-block]").addEventListener("click", async () => {
+      await api("/api/ownwe/moments/block", { charId });
+      menu.remove(); openMoreMenu = null;
+      loadMoments();
+    });
   }));
 }
+
+document.addEventListener("click", () => {
+  if (openMoreMenu) { openMoreMenu.remove(); openMoreMenu = null; }
+});
+
 $("momentPost").addEventListener("click", async () => {
   const text = $("momentInput").value.trim();
   if (!text) return;
@@ -498,10 +866,17 @@ $("momentPost").addEventListener("click", async () => {
   await api("/api/ownwe/moments/post", { text });
   $("momentInput").value = "";
   loadMoments();
-  // characters react in the background — refresh a couple times to catch likes/comments
   setTimeout(loadMoments, 4000);
   setTimeout(() => { loadMoments(); $("momentPost").disabled = false; }, 9000);
 });
+
+$("charPostBtn").addEventListener("click", async () => {
+  $("charPostBtn").disabled = true;
+  $("charPostBtn").textContent = "生成中…";
+  await api("/api/ownwe/moments/char-post", { force: true });
+  setTimeout(() => { loadMoments(); $("charPostBtn").disabled = false; $("charPostBtn").textContent = "角色发圈"; }, 3000);
+});
+
 function fmtTime(iso) {
   const d = new Date((iso || "").replace(" ", "T") + (iso && iso.includes("Z") ? "" : "Z"));
   if (isNaN(d)) return iso || "";
@@ -524,7 +899,7 @@ $("pSave").addEventListener("click", async () => {
   const s = $("pSaved"); s.style.display = "inline"; setTimeout(() => { s.style.display = "none"; }, 1500);
 });
 
-// ── Unread (proactive check-ins) ──────────────────────────────────────────
+// ── Unread (proactive check-ins) ─────────────────────────────────────────
 async function refreshUnread() {
   try {
     const next = await fetch("/api/ownwe/unread").then((r) => r.json());
@@ -536,13 +911,9 @@ async function refreshUnread() {
     const btn = document.querySelector('.rail-btn[data-tab="chats"]');
     if (any && !dot && btn) { dot = document.createElement("div"); dot.className = "rail-dot"; btn.appendChild(dot); }
     if (!any && dot) dot.remove();
-  } catch (e) {}
+  } catch {}
 }
 setInterval(refreshUnread, 20000);
-
-// When opening a chat, that character's unread clears (server marks delivered).
-const _openChat = openChat;
-openChat = async function (id) { await _openChat(id); delete unread[id]; setTimeout(refreshUnread, 1500); };
 
 loadContacts();
 refreshUnread();

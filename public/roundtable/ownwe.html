@@ -216,6 +216,10 @@
       <label class="grow"><span>模型（留空用默认）</span><input id="cModel" placeholder="deepseek-chat"></label>
     </div>
     <label><span>专属 API Key（留空则用服务器上对应 provider 的 key）</span><input id="cKey" type="password" placeholder="留空即可"></label>
+    <label style="display:flex;align-items:center;gap:8px;flex-direction:row">
+      <input type="checkbox" id="cDeep" checked style="width:auto">
+      <span style="margin:0">默认开深度思考（用更强的模型，回复更像人；关掉则简单问题用便宜模型省钱）</span>
+    </label>
     <div class="modal-foot">
       <button type="button" class="btn danger" id="cDelete" style="visibility:hidden">删除</button>
       <div style="display:flex;gap:10px">
@@ -240,6 +244,8 @@ let pollTimer = null;
 let lastKey = "";
 let currentTab = "chats";
 let unread = {};
+let typing = false;
+const typedIds = new Set();
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 document.querySelectorAll(".rail-btn").forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
@@ -291,6 +297,7 @@ async function openChat(charId) {
 }
 
 function renderMessages(snap, force) {
+  if (typing && !force) return; // don't clobber an in-progress typewriter
   const msgs = (snap.messages || []).filter((m) => ["user", "claude", "system"].includes(m.speaker));
   const running = snap.running || msgs.some((m) => m.speaker === "claude" && m.pending);
   const key = msgs.map((m) => m.id + ":" + (m.text || "").length + ":" + (m.pending ? 1 : 0)).join("|") + ":" + running;
@@ -300,6 +307,13 @@ function renderMessages(snap, force) {
   const av = c ? (c.avatar_emoji || "🙂") : "🙂";
   const box = $("messages");
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+
+  // On initial/forced load, treat all existing replies as already shown.
+  if (force) msgs.forEach((m) => { if (m.speaker === "claude" && m.text) typedIds.add(m.id); });
+  // Animate the newest completed reply if we haven't shown it yet.
+  const last = msgs[msgs.length - 1];
+  const animate = !force && last && last.speaker === "claude" && last.text && !last.pending && !typedIds.has(last.id);
+
   let html = "";
   for (const m of msgs) {
     if (m.speaker === "system") {
@@ -308,8 +322,9 @@ function renderMessages(snap, force) {
     } else if (m.speaker === "user") {
       html += `<div class="row me"><div class="av">我</div><div class="bubble">${esc(m.text)}</div></div>`;
     } else {
-      const txt = m.text ? esc(m.text) : '<span class="typing">正在输入…</span>';
-      html += `<div class="row them"><div class="av">${av}</div><div class="bubble">${txt}</div></div>`;
+      const isAnim = animate && m === last;
+      const txt = isAnim ? "" : (m.text ? esc(m.text) : '<span class="typing">正在输入…</span>');
+      html += `<div class="row them"><div class="av">${av}</div><div class="bubble"${isAnim ? ' data-anim="1"' : ""}>${txt}</div></div>`;
     }
   }
   if (running && !msgs.some((m) => m.speaker === "claude" && m.pending && !m.text)) {
@@ -318,6 +333,31 @@ function renderMessages(snap, force) {
   box.innerHTML = html || '<div class="placeholder">打个招呼吧 👋</div>';
   $("chatStatus").textContent = running ? "对方正在输入…" : "";
   if (atBottom || force) box.scrollTop = box.scrollHeight;
+
+  if (animate) {
+    typedIds.add(last.id);
+    const el = box.querySelector('[data-anim="1"]');
+    if (el) typewriter(el, last.text);
+  }
+}
+
+// Reveal a reply at a human-ish pace instead of dumping it instantly.
+function typewriter(el, full) {
+  typing = true;
+  const box = $("messages");
+  const step = Math.max(1, Math.ceil(full.length / 200)); // cap very long messages
+  let i = 0;
+  const tick = setInterval(() => {
+    i += step;
+    el.textContent = full.slice(0, i);
+    if (box.scrollHeight - box.scrollTop - box.clientHeight < 120) box.scrollTop = box.scrollHeight;
+    if (i >= full.length) {
+      clearInterval(tick);
+      el.textContent = full;
+      typing = false;
+      box.scrollTop = box.scrollHeight;
+    }
+  }, 45);
 }
 
 function startPolling() {
@@ -351,6 +391,7 @@ function openCharDialog(c) {
   $("cId").value = c?.id || ""; $("cEmoji").value = c?.avatar_emoji || ""; $("cName").value = c?.name || "";
   $("cPersona").value = c?.persona_prompt || ""; $("cProvider").value = c?.provider || "deepseek";
   $("cModel").value = c?.model || ""; $("cKey").value = "";
+  $("cDeep").checked = c ? c.deep_thinking !== 0 : true;
   $("cDelete").style.visibility = c ? "visible" : "hidden";
   $("charDialog").showModal();
 }
@@ -362,7 +403,7 @@ $("charForm").addEventListener("submit", async (e) => {
   await api("/api/ownwe/characters/upsert", {
     id: $("cId").value || undefined, avatar_emoji: $("cEmoji").value || "🙂", name: $("cName").value.trim(),
     persona_prompt: $("cPersona").value, provider: $("cProvider").value, model: $("cModel").value.trim(),
-    api_key_override: $("cKey").value.trim(),
+    api_key_override: $("cKey").value.trim(), deep_thinking: $("cDeep").checked ? 1 : 0,
   });
   $("charDialog").close(); await loadContacts();
 });

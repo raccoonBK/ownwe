@@ -93,12 +93,17 @@ function createApiAgentAdapter(config) {
       if (charOverride.model) explicitModel = charOverride.model;
     }
 
-    // Cost-aware auto model switch: when no explicit model is set, pick a cheap tier
-    // for companion/simple turns (mode B) and a stronger tier for tool/complex (mode A).
+    // Model tier: with "deep thinking" on (default) the character uses the stronger/
+    // reasoning model even for casual chat. With it off, cost-aware A/B auto-switch
+    // (cheap for companion turns, strong for tool/complex).
     let resolvedModel = explicitModel;
     if (!resolvedModel) {
       const tier = MODEL_TIERS[provider];
-      if (tier) resolvedModel = (ownweMode === "A") ? tier.strong : tier.cheap;
+      if (tier) {
+        const deepThinking = charOverride ? charOverride.deepThinking !== false : true;
+        const wantStrong = deepThinking || ownweMode === "A";
+        resolvedModel = wantStrong ? tier.strong : tier.cheap;
+      }
     }
     if (!resolvedModel) resolvedModel = PROVIDER_CONFIGS[provider]?.defaultModel || "";
 
@@ -349,13 +354,13 @@ function resolveCharacterProvider(dbPath, bindingKey) {
     ).get(topicId, speaker);
     if (!binding?.character_id) return null;
     const ch = db.prepare(
-      "SELECT provider, model, api_key_override FROM ownwe_characters WHERE id = ?"
+      "SELECT provider, model, api_key_override, deep_thinking FROM ownwe_characters WHERE id = ?"
     ).get(binding.character_id);
     if (!ch) return null;
     const provider = ch.provider || "anthropic";
     const apiKey = (ch.api_key_override && ch.api_key_override.trim()) || envKeyForProvider(provider);
     if (!apiKey) return null;
-    return { provider, apiKey, model: (ch.model || "").trim() };
+    return { provider, apiKey, model: (ch.model || "").trim(), deepThinking: ch.deep_thinking !== 0 };
   } catch {
     return null;
   }

@@ -5092,7 +5092,7 @@ function contentTypeFor(filePath) {
 async function main() {
   loadEnv();
   const config = readConfig();
-  const port = clampInteger(readFirstEnv("ROUNDTABLE_PORT"), 1, 65535, DEFAULT_PORT);
+  const port = clampInteger(readFirstEnv("ROUNDTABLE_PORT", "PORT"), 1, 65535, DEFAULT_PORT);
   const host = readFirstEnv("ROUNDTABLE_HOST") || "0.0.0.0";
   const server = new RoundtableServer(config);
   const stop = async () => {

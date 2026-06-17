@@ -16,4 +16,5 @@ EXPOSE 8787
 
 VOLUME ["/data"]
 
-CMD ["node", "./src/app/roundtable-server.js"]
+# node:sqlite is experimental on Node 22 and requires this flag, or the server crashes on boot
+CMD ["node", "--experimental-sqlite", "./src/app/roundtable-server.js"]

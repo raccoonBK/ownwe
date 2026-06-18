@@ -3825,7 +3825,8 @@ function buildRuntimePrompt({ speaker, state, stateDir = "", dbPath = "", ownweM
         if (character) {
           const memories = readMemories(dbPath, { charId: character.id, limit: 6 });
           const relationshipState = getRelationshipState(dbPath, character.id);
-          const transcript = formatTranscript(state.messages, { maxMessages: 20, stateDir, speaker });
+          const charLabel = (character.codename || character.name || "").trim() || "角色";
+          const transcript = formatOwnWeTranscript(state.messages, { maxMessages: 20, stateDir, charName: charLabel, speaker });
           // 画像: this character's own picture of the user (knows-but-doesn't-cite)
           let profileBlock = "";
           try {
@@ -5234,6 +5235,25 @@ function openOrCreateBoundTopic(draft, {
     relinkSidebarProjectIfNeeded(draft, draft.id, draft.topic, draft.container?.type === "project" ? cid : "");
   }
   return id;
+}
+
+// OwnWe variant: relabels the character's own turns to their name (not "Claude Code")
+// and the user's turns to "用户". This is critical for persona stability — if the
+// model sees "Claude Code: [my reply]" in history, it collapses back into AI-assistant
+// mode regardless of how strong the persona prompt is.
+function formatOwnWeTranscript(messages, { maxMessages = 20, stateDir = "", charName = "你", speaker = "" } = {}) {
+  const normalizedSpeaker = normalizeSpeakerTarget(speaker);
+  return (Array.isArray(messages) ? messages : [])
+    .filter((message) => message?.transcript !== false)
+    .filter((message) => !message?.pending)
+    .filter((message) => !normalizedSpeaker || !message.injectionTarget || message.injectionTarget === normalizedSpeaker)
+    .slice(-maxMessages)
+    .map((message) => {
+      const label = message.speaker === "user" ? "用户" : charName;
+      return `${label}：${formatMessageForTranscript(message, { stateDir })}`;
+    })
+    .filter((line) => !line.endsWith("："))
+    .join("\n\n");
 }
 
 function formatTranscript(messages, { maxMessages = MAX_HISTORY_MESSAGES, stateDir = "", speaker = "" } = {}) {

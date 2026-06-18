@@ -471,6 +471,97 @@ function extractKeywords(text) {
   return text.replace(/[^一-龥a-zA-Z0-9]/g, " ").split(/\s+/).filter((t) => t.length > 1);
 }
 
+// ── Inter-character relationship (角色间关系矩阵) ───────────────────────────────
+//
+// Each (char_id, target_id) pair tracks how char_id feels about target_id.
+// Jealousy is the main driver: it rises when the user pays attention to target
+// instead of char, and decays naturally over time.
+
+const CC_JEALOUSY_CAP = 0.85;
+const CC_JEALOUSY_DECAY_TAU_H = 8;   // half-life ~5.5h
+const CC_TENSION_DECAY_TAU_H = 6;
+
+function ensureCharCharRow(db, charId, targetId) {
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO char_char_relationship (char_id, target_id, affinity, jealousy, tension, updated_at)
+    VALUES (?, ?, 0.5, 0.0, 0.0, ?)
+    ON CONFLICT(char_id, target_id) DO NOTHING
+  `).run(charId, targetId, now);
+  return db.prepare("SELECT * FROM char_char_relationship WHERE char_id = ? AND target_id = ?").get(charId, targetId);
+}
+
+// Get the relationship state with lazy time-decay applied.
+function getCharCharRelationship(dbPath, charId, targetId) {
+  try {
+    const db = getDb(dbPath);
+    const row = ensureCharCharRow(db, charId, targetId);
+    if (!row) return { affinity: 0.5, jealousy: 0.0, tension: 0.0 };
+
+    const nowIso = new Date().toISOString();
+    const updatedAt = row.updated_at || nowIso;
+    const idleH = hoursBetween(updatedAt, nowIso);
+
+    const jealousy = Math.max(0, row.jealousy * Math.exp(-idleH / CC_JEALOUSY_DECAY_TAU_H));
+    const tension = Math.max(0, row.tension * Math.exp(-idleH / CC_TENSION_DECAY_TAU_H));
+
+    if (Math.abs(jealousy - row.jealousy) > 0.001 || Math.abs(tension - row.tension) > 0.001) {
+      db.prepare("UPDATE char_char_relationship SET jealousy = ?, tension = ?, updated_at = ? WHERE char_id = ? AND target_id = ?")
+        .run(jealousy, tension, nowIso, charId, targetId);
+    }
+    return { affinity: row.affinity, jealousy, tension };
+  } catch {
+    return { affinity: 0.5, jealousy: 0.0, tension: 0.0 };
+  }
+}
+
+// When the user talks to targetChar in 1:1 chat, nudge other characters' jealousy upward.
+// charIds: all character IDs. targetCharId: who the user is chatting with.
+function noteUserFocusedOnChar(dbPath, allCharIds, targetCharId) {
+  try {
+    const db = getDb(dbPath);
+    const now = new Date().toISOString();
+    for (const charId of allCharIds) {
+      if (charId === targetCharId) continue;
+      const row = ensureCharCharRow(db, charId, targetCharId);
+      // Small nudge — user paying attention to target makes others slightly envious.
+      const bump = 0.04 * (1 + (row?.affinity ?? 0.5)); // more attached = slightly more jealous
+      const jealousy = Math.min(CC_JEALOUSY_CAP, (row?.jealousy || 0) + bump);
+      db.prepare("UPDATE char_char_relationship SET jealousy = ?, updated_at = ? WHERE char_id = ? AND target_id = ?")
+        .run(jealousy, now, charId, targetCharId);
+    }
+  } catch {
+    // best effort
+  }
+}
+
+// Build a short inter-character attitude note for one character.
+// relationships: array of { targetId, targetHandle, affinity, jealousy, tension }
+function buildCharCharNote(relationships) {
+  if (!relationships || !relationships.length) return "";
+  const lines = [];
+  for (const r of relationships) {
+    if (!r.targetHandle) continue;
+    const parts = [];
+    if (r.jealousy >= 0.55) {
+      parts.push(`对「${r.targetHandle}」心里有点不是滋味（用户最近好像更关注TA）`);
+    } else if (r.jealousy >= 0.3) {
+      parts.push(`对「${r.targetHandle}」有些微酸`);
+    }
+    if (r.tension >= 0.5) {
+      parts.push(`和「${r.targetHandle}」之间有点小摩擦`);
+    }
+    if (r.affinity >= 0.75) {
+      parts.push(`和「${r.targetHandle}」挺投缘`);
+    } else if (r.affinity <= 0.25) {
+      parts.push(`不太喜欢「${r.targetHandle}」这个人`);
+    }
+    if (parts.length) lines.push(parts.join("，"));
+  }
+  if (!lines.length) return "";
+  return `（你对群里这几个人的内心感受，自然流露但不直说：${lines.join("；")}）`;
+}
+
 module.exports = {
   buildOwnWeContext,
   buildIdentityNote,
@@ -486,4 +577,7 @@ module.exports = {
   recordInteraction,
   recordIgnoredCheckin,
   isInSleepHours,
+  getCharCharRelationship,
+  noteUserFocusedOnChar,
+  buildCharCharNote,
 };

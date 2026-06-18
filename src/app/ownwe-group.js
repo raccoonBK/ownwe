@@ -9,7 +9,7 @@
 
 const { getDb } = require("../db/connection");
 const { generateCharacterReply } = require("../adapters/api/api-agent-adapter");
-const { readMemories, buildIdentityNote } = require("./ownwe-context");
+const { readMemories, buildIdentityNote, getCharCharRelationship, buildCharCharNote } = require("./ownwe-context");
 
 // 全局渠道规则：手机文字群聊，没有线下动作。和单聊上下文模板里那条对齐。
 const CHANNEL_RULE =
@@ -55,7 +55,7 @@ function parseMentions(text, members) {
   return hits;
 }
 
-function buildDecisionPrompt({ member, others, transcript, forced, memories = [] }) {
+function buildDecisionPrompt({ member, others, transcript, forced, memories = [], charCharNote = "" }) {
   const peers = others.map((o) => pub(o)).join("、");
   const identityNote = buildIdentityNote(member);
   const personaLine = member.persona_prompt
@@ -70,6 +70,7 @@ function buildDecisionPrompt({ member, others, transcript, forced, memories = []
     `在这个群里，大家只用代号相称，你的代号是「${pub(member)}」，不要暴露真名。`,
     `你正在一个群聊里。群里还有：${peers}，以及用户本人。`,
     memBlock,
+    charCharNote,
     CHANNEL_RULE,
     forced
       ? "刚才有人在群里点名 @ 了你，你应该自然地回应。"
@@ -178,7 +179,14 @@ async function runGroupReplies({
 
     const others = members.filter((x) => x.id !== member.id);
     const memories = readMemories(dbPath, { charId: member.id, limit: 6 });
-    const { system, user } = buildDecisionPrompt({ member, others, transcript: runningTranscript, forced, memories });
+    // Load this member's feelings toward each other member
+    const ccRels = others.map((o) => ({
+      targetId: o.id,
+      targetHandle: pub(o),
+      ...getCharCharRelationship(dbPath, member.id, o.id),
+    }));
+    const charCharNote = buildCharCharNote(ccRels);
+    const { system, user } = buildDecisionPrompt({ member, others, transcript: runningTranscript, forced, memories, charCharNote });
 
     let decision = null;
     try {

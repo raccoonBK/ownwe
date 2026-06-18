@@ -336,8 +336,16 @@ async function reactToComment(dbPath, momentId, userCommentText, momentAuthorId,
       `SELECT id, name, codename, gender, persona_prompt FROM ownwe_characters WHERE id IN (${[...candidates].map(() => "?").join(",")})`
     ).all(...candidates);
 
-    const moment = db.prepare("SELECT text FROM ownwe_moments WHERE id = ?").get(momentId);
+    const moment = db.prepare("SELECT text, author_type, author_id FROM ownwe_moments WHERE id = ?").get(momentId);
     const momentText = moment?.text || "";
+    // Identify who posted the moment so characters know whose circle they're in
+    let momentPosterLabel = "用户";
+    if (moment?.author_type === "char" && moment.author_id) {
+      try {
+        const poster = db.prepare("SELECT name, codename FROM ownwe_characters WHERE id = ?").get(moment.author_id);
+        if (poster) momentPosterLabel = `「${poster.codename || poster.name}」`;
+      } catch {}
+    }
 
     const prevComments = db.prepare(
       "SELECT oc.text, oc.author_type, oc.author_id, oc.reply_to_name, ch.name as char_name, ch.codename as char_codename FROM ownwe_moment_comments oc LEFT JOIN ownwe_characters ch ON ch.id = oc.author_id WHERE oc.moment_id = ? ORDER BY oc.id ASC LIMIT 10"
@@ -374,7 +382,7 @@ async function reactToComment(dbPath, momentId, userCommentText, momentAuthorId,
           systemPrompt,
           messages: [{
             role: "user",
-            content: `朋友圈原文：${momentText.slice(0, 200)}\n\n评论区：\n${prevComments}\n\n用户刚说：${userCommentText.slice(0, 200)}`,
+            content: `这条朋友圈是${momentPosterLabel}发的：${momentText.slice(0, 200)}\n\n评论区：\n${prevComments}\n\n用户刚说：${userCommentText.slice(0, 200)}`,
           }],
         });
 

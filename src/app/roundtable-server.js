@@ -24,6 +24,7 @@ const {
   getRelationshipState,
   recordInteraction,
   isInSleepHours,
+  noteUserFocusedOnChar,
 } = require("./ownwe-context");
 const {
   EXTRACT_EVERY,
@@ -1744,6 +1745,12 @@ class RoundtableServer {
     } catch (err) {
       console.warn("[ownwe] deliver checkins failed:", err.message);
     }
+    // Notify other characters that the user is paying attention to this one.
+    // This nudges their jealousy of this character upward (hidden state, §6).
+    try {
+      const allChars = listCharacters(this.config.dbPath).map((c) => c.id);
+      noteUserFocusedOnChar(this.config.dbPath, allChars, character.id);
+    } catch {}
     return topicId;
   }
 

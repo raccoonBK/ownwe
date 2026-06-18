@@ -357,6 +357,12 @@
     <h3>新建群聊</h3>
     <label><span>群名</span><input id="gName" placeholder="我们的群"></label>
     <label><span>群头像 emoji</span><input id="gEmoji" maxlength="2" placeholder="👥" style="width:80px;text-align:center"></label>
+    <label><span>群类型</span>
+      <select id="gType" style="width:100%;padding:6px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg-2);color:var(--ink-1)">
+        <option value="casual">水群（日常闲聊）</option>
+        <option value="work">工作群（任务协作）</option>
+      </select>
+    </label>
     <div>
       <div style="font-size:12px;color:var(--ink-2);margin-bottom:8px">选择角色（至少 2 个）</div>
       <div class="char-check-list" id="groupCharList"></div>
@@ -941,7 +947,7 @@ $("cDelete").addEventListener("click", async () => {
 // ── Group chat ────────────────────────────────────────────────────────────
 $("addGroupBtn").addEventListener("click", () => {
   if (!characters.length) { alert("先创建至少 2 个角色再建群。"); return; }
-  $("gName").value = ""; $("gEmoji").value = "👥";
+  $("gName").value = ""; $("gEmoji").value = "👥"; $("gType").value = "casual";
   $("groupCharList").innerHTML = characters.map((c) => `
     <label class="char-check-item">
       <input type="checkbox" value="${c.id}">
@@ -955,7 +961,8 @@ $("gCreate").addEventListener("click", async () => {
   const emoji = $("gEmoji").value || "👥";
   const charIds = Array.from($("groupCharList").querySelectorAll("input:checked")).map((el) => el.value);
   if (charIds.length < 2) { alert("请至少勾选 2 个角色"); return; }
-  await api("/api/ownwe/groups/create", { name, avatarEmoji: emoji, charIds });
+  const groupType = $("gType").value || "casual";
+  await api("/api/ownwe/groups/create", { name, avatarEmoji: emoji, charIds, groupType });
   $("groupDialog").close();
   await loadContacts();
 });

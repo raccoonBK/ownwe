@@ -484,6 +484,7 @@ class RoundtableServer {
       return db.prepare("SELECT * FROM ownwe_groups ORDER BY created_at DESC").all().map((g) => ({
         ...g,
         charIds: JSON.parse(g.char_ids || "[]"),
+        groupType: g.group_type || "casual",
       }));
     } catch {
       return [];
@@ -494,13 +495,14 @@ class RoundtableServer {
     const name = normalizeText(body.name) || "群聊";
     const charIds = Array.isArray(body.charIds) ? body.charIds.filter(Boolean) : [];
     const emoji = normalizeText(body.avatarEmoji) || "👥";
+    const groupType = body.groupType === "work" ? "work" : "casual";
     if (charIds.length < 2) throw new Error("至少选择 2 个角色");
     const id = `ownwe-group-${Date.now()}`;
     const db = require("../db/connection").getDb(this.config.dbPath);
     db.prepare(
-      "INSERT INTO ownwe_groups (id, name, char_ids, avatar_emoji) VALUES (?, ?, ?, ?)"
-    ).run(id, name, JSON.stringify(charIds), emoji);
-    return { id, name, charIds, avatarEmoji: emoji };
+      "INSERT INTO ownwe_groups (id, name, char_ids, avatar_emoji, group_type) VALUES (?, ?, ?, ?, ?)"
+    ).run(id, name, JSON.stringify(charIds), emoji, groupType);
+    return { id, name, charIds, avatarEmoji: emoji, groupType };
   }
 
   addMembersToGroup(body = {}) {
@@ -2359,7 +2361,7 @@ class RoundtableServer {
       const g = require("../db/connection").getDb(this.config.dbPath)
         .prepare("SELECT * FROM ownwe_groups WHERE id = ?").get(cid);
       if (!g) return null;
-      return { id: g.id, name: g.name, charIds: JSON.parse(g.char_ids || "[]") };
+      return { id: g.id, name: g.name, charIds: JSON.parse(g.char_ids || "[]"), groupType: g.group_type || "casual" };
     } catch {
       return null;
     }
@@ -2389,6 +2391,7 @@ class RoundtableServer {
           transcript,
           userText,
           ownweMode,
+          groupType: group.groupType || "casual",
           isStale: () => this.autoRunToken !== token
             || (this.store.get()?.id || "") !== topicId
             || (this.ownweGroupForState()?.id || "") !== group.id,
@@ -2479,6 +2482,7 @@ class RoundtableServer {
         const opener = await composeGroupOpener({
           dbPath: this.config.dbPath, member: starter, others, transcript,
           ownweMode: this._lastOwnweMode || "B",
+          groupType: group.groupType || "casual",
         });
         if (!opener) continue;
 
@@ -2513,6 +2517,7 @@ class RoundtableServer {
           transcript: `${transcript}\n${groupPub(starter)}：${opener}`.trim(),
           userText: "",
           ownweMode: this._lastOwnweMode || "B",
+          groupType: group.groupType || "casual",
           maxMessages: 3,
           isStale: () => !this.findGroupTopicState(topicId),
           pushMessage: pushIntoTopic,

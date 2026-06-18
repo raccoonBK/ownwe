@@ -137,10 +137,18 @@ function createApiAgentAdapter(config) {
 
     const systemPrompt = buildSystemPrompt(config);
 
-    // include opening instructions on first message
+    // OwnWe characters: the `text` is the full self-contained OwnWe context block
+    // (persona + memories + transcript + current user message), rebuilt fresh each turn.
+    // Accumulating it in historyByThread causes the transcript to appear twice (once
+    // inside the context block and once in raw history), which dilutes the character's
+    // persona over time. Instead, send it as a single stateless turn every time.
+    const isOwnweCharacter = Boolean(charOverride);
+    if (isOwnweCharacter) {
+      historyByThread.delete(threadId); // always fresh — context block is self-contained
+    }
+
     const isFirstTurn = getHistory(threadId).length === 0;
-    const outboundText = isFirstTurn && systemPrompt ? text : text;
-    appendHistory(threadId, "user", outboundText);
+    appendHistory(threadId, "user", text);
 
     let replyText = "";
     try {
@@ -150,7 +158,9 @@ function createApiAgentAdapter(config) {
         baseUrl: (charOverride || hasImages) ? "" : (config.baseUrl || ""),
         model: resolvedModel,
         messages: getHistory(threadId),
-        systemPrompt: isFirstTurn ? systemPrompt : "",
+        // OwnWe: no file-based system prompt — the context block IS the prompt.
+        // Non-OwnWe: system prompt only on first turn (existing behaviour).
+        systemPrompt: isOwnweCharacter ? "" : (isFirstTurn ? systemPrompt : ""),
         images: hasImages ? images : [],
       });
     } catch (error) {

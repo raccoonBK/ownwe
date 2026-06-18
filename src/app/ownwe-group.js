@@ -55,8 +55,19 @@ function parseMentions(text, members) {
   return hits;
 }
 
-function buildDecisionPrompt({ member, others, transcript, forced, memories = [], charCharNote = "" }) {
-  const peers = others.map((o) => pub(o)).join("、");
+function genderLabel(g) {
+  if (!g) return "";
+  const s = String(g).toLowerCase();
+  if (s === "male" || s === "男") return "男";
+  if (s === "female" || s === "女") return "女";
+  return "";
+}
+
+function buildDecisionPrompt({ member, others, transcript, forced, memories = [], charCharNote = "", groupType = "casual" }) {
+  const peers = others.map((o) => {
+    const gl = genderLabel(o.gender);
+    return gl ? `${pub(o)}（${gl}）` : pub(o);
+  }).join("、");
   const identityNote = buildIdentityNote(member);
   const personaLine = member.persona_prompt
     ? `你的人设：\n${member.persona_prompt.slice(0, 1200)}`
@@ -64,11 +75,15 @@ function buildDecisionPrompt({ member, others, transcript, forced, memories = []
   const memBlock = memories.length
     ? `你私下对用户和这几个人的了解（凭直觉带入，别直接引用）：\n${memories.map((m) => `- ${m.content}`).join("\n")}`
     : "";
+  const groupToneNote = groupType === "work"
+    ? "这是一个工作群，话题以工作任务、进展、协作为主，保持专业感但不失人味。"
+    : "这是个水群，日常闲聊为主，随意轻松。";
   const system = [
     identityNote || `你是「${pub(member)}」。`,
     personaLine,
     `在这个群里，大家只用代号相称，你的代号是「${pub(member)}」，不要暴露真名。`,
     `你正在一个群聊里。群里还有：${peers}，以及用户本人。`,
+    groupToneNote,
     memBlock,
     charCharNote,
     CHANNEL_RULE,
@@ -85,19 +100,26 @@ function buildDecisionPrompt({ member, others, transcript, forced, memories = []
 
 // Compose an ambient conversation opener — a character spontaneously starts a topic
 // when the group has been quiet (the group-chat embodiment of the Life Tick).
-async function composeGroupOpener({ dbPath, member, others, transcript, ownweMode = "B" }) {
-  const peers = others.map((o) => pub(o)).join("、");
+async function composeGroupOpener({ dbPath, member, others, transcript, ownweMode = "B", groupType = "casual" }) {
+  const peers = others.map((o) => {
+    const gl = genderLabel(o.gender);
+    return gl ? `${pub(o)}（${gl}）` : pub(o);
+  }).join("、");
   const identityNote = buildIdentityNote(member);
   const personaLine = member.persona_prompt ? `你的人设：\n${member.persona_prompt.slice(0, 1200)}` : `你是「${pub(member)}」。`;
   const memories = readMemories(dbPath, { charId: member.id, limit: 5 });
   const memBlock = memories.length
     ? `你对这群人的了解（凭直觉带入，别直接引用）：\n${memories.map((m) => `- ${m.content}`).join("\n")}`
     : "";
+  const groupToneNote = groupType === "work"
+    ? "这是一个工作群，话题以工作任务、进展、协作为主，保持专业感但不失人味。"
+    : "这是个水群，日常闲聊为主，随意轻松。";
   const system = [
     identityNote || `你是「${pub(member)}」。`,
     personaLine,
     `在这个群里大家只用代号相称，你的代号是「${pub(member)}」，不要暴露真名。`,
     `群里还有：${peers}，以及用户本人。群里已经安静了一阵子。`,
+    groupToneNote,
     memBlock,
     CHANNEL_RULE,
     "你忽然想在群里起个话头——可能是你最近在想的事、一个突然的念头、一句吐槽、或者想问问大家。",
@@ -150,6 +172,7 @@ async function runGroupReplies({
   transcript,
   userText = "",
   ownweMode = "B",
+  groupType = "casual",
   pushMessage,
   isStale = () => false,
   sleep = defaultSleep,
@@ -186,7 +209,7 @@ async function runGroupReplies({
       ...getCharCharRelationship(dbPath, member.id, o.id),
     }));
     const charCharNote = buildCharCharNote(ccRels);
-    const { system, user } = buildDecisionPrompt({ member, others, transcript: runningTranscript, forced, memories, charCharNote });
+    const { system, user } = buildDecisionPrompt({ member, others, transcript: runningTranscript, forced, memories, charCharNote, groupType });
 
     let decision = null;
     try {

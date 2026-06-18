@@ -25,6 +25,7 @@ const {
   recordInteraction,
   isInSleepHours,
   noteUserFocusedOnChar,
+  SKILL_LIBRARY,
 } = require("./ownwe-context");
 const {
   EXTRACT_EVERY,
@@ -747,6 +748,14 @@ class RoundtableServer {
     // OwnWe GET endpoints
     if (req.method === "GET" && requestUrl.pathname === "/api/ownwe/characters") {
       this.sendJson(res, 200, listCharacters(this.config.dbPath));
+      return;
+    }
+    if (req.method === "GET" && requestUrl.pathname === "/api/ownwe/skills") {
+      // Return the skill library so the frontend can render the picker
+      const lib = Object.entries(SKILL_LIBRARY).map(([key, s]) => ({
+        key, name: s.name, emoji: s.emoji, desc: s.desc,
+      }));
+      this.sendJson(res, 200, lib);
       return;
     }
     if (req.method === "GET" && requestUrl.pathname === "/api/ownwe/user-base") {

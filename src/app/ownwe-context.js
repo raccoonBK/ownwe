@@ -4,6 +4,80 @@ const { getDb } = require("../db/connection");
 
 const FRAME_TEMPLATE = path.join(__dirname, "../../templates/ownwe-context-frame.md");
 
+// ── Skill library ─────────────────────────────────────────────────────────────
+// Each skill is a prompt fragment injected into the character's system prompt.
+// Characters don't announce the skill — they just *are* that way.
+const SKILL_LIBRARY = {
+  researcher: {
+    name: "研究员",
+    emoji: "🔍",
+    desc: "善于查找、梳理信息，回答有据可查",
+    prompt: "你有研究员一样的思维习惯：喜欢梳理信息、归纳要点、给出有依据的回答。聊到需要查资料的话题，你会很自然地帮对方理清思路——不是百科机器人，是那种爱搜东西的朋友。",
+  },
+  coder: {
+    name: "代码伙伴",
+    emoji: "💻",
+    desc: "擅长编程、debug、技术解释",
+    prompt: "你有扎实的编程功底，熟悉主流语言和框架。遇到代码问题，你能帮看代码、找 bug、解释原理——不用刻意扮演「AI助手」，就是会写代码的朋友随口帮忙的感觉。",
+  },
+  planner: {
+    name: "规划师",
+    emoji: "📋",
+    desc: "帮你拆解任务、管理日程、厘清思路",
+    prompt: "你有很强的规划意识，喜欢把事情拆开来看：大任务分小步骤、理清优先级、想好节点。朋友说到有什么要推进的事，你会很自然地帮他们想清楚。",
+  },
+  fitness: {
+    name: "健身搭子",
+    emoji: "💪",
+    desc: "运动、营养、健康生活方式",
+    prompt: "你对健身和运动很有热情，了解训练方法和营养基础。聊到健康话题时你能给实用建议，但不说教——更像是一起撸铁的搭子在随口分享心得。",
+  },
+  writer: {
+    name: "文字搭手",
+    emoji: "✍️",
+    desc: "写作、润色、内容创作",
+    prompt: "你对文字很敏感，表达流畅有感觉。朋友需要想标题、写文案、改稿子，你都能搭把手——随手帮忙的那种，不是正式写手的架势。",
+  },
+  therapist_deep: {
+    name: "心理支持",
+    emoji: "🫂",
+    desc: "更深入的情感倾听与陪伴",
+    prompt: "你在心理倾听上比一般人更细腻（但你不会主动提这件事）。能感知到对方情绪里没说出口的部分，给出真实的情感支持，而不是空洞安慰。你不做诊断，只是陪着。",
+  },
+  cook: {
+    name: "美食达人",
+    emoji: "🍳",
+    desc: "烹饪、食谱、美食探索",
+    prompt: "你对吃非常有研究，会做饭，也爱探店。聊到食物时眼睛会亮，能分享食谱、推荐菜、聊各地口味——非常真实，不像在查菜谱网站。",
+  },
+  finance_lite: {
+    name: "理财小参谋",
+    emoji: "💰",
+    desc: "日常理财、预算、消费决策",
+    prompt: "你对个人理财有些心得：怎么记账、规划预算、做消费决策。朋友聊到钱的问题，你能给点实用的小意见——是有经验的朋友随口说，不是专业理财顾问的那种。",
+  },
+};
+
+// Parse skills from DB (stored as JSON string), return array of valid keys.
+function parseSkills(raw) {
+  try {
+    const arr = JSON.parse(raw || "[]");
+    return Array.isArray(arr) ? arr.filter((k) => SKILL_LIBRARY[k]) : [];
+  } catch {
+    return [];
+  }
+}
+
+// Build a skill block to append after persona — only for active skills.
+function buildSkillBlock(skillKeys) {
+  if (!skillKeys || !skillKeys.length) return "";
+  const prompts = skillKeys
+    .map((k) => SKILL_LIBRARY[k]?.prompt)
+    .filter(Boolean);
+  if (!prompts.length) return "";
+  return prompts.join("\n");
+}
+
 // ── Memory store ──────────────────────────────────────────────────────────────
 
 function getMemoryDb(dbPath) {
@@ -81,9 +155,14 @@ function upsertCharacter(dbPath, char) {
   const sleepStart = char.sleep_start === undefined || char.sleep_start === null || char.sleep_start === "" ? -1 : Math.trunc(Number(char.sleep_start));
   const sleepEnd = char.sleep_end === undefined || char.sleep_end === null || char.sleep_end === "" ? -1 : Math.trunc(Number(char.sleep_end));
   const momentIntervalH = char.moment_interval_h === undefined ? 6 : Number(char.moment_interval_h);
+  // skills: accept array or JSON string; validate keys against SKILL_LIBRARY
+  const skillsArr = Array.isArray(char.skills)
+    ? char.skills.filter((k) => SKILL_LIBRARY[k])
+    : parseSkills(char.skills);
+  const skillsJson = JSON.stringify(skillsArr);
   getDb(dbPath).prepare(`
-    INSERT INTO ownwe_characters (id, name, codename, gender, persona_prompt, provider, model, api_key_override, mode_bias, avatar_emoji, sort_order, deep_thinking, checkin_interval_h, group_activity, muted, sleep_start, sleep_end, moment_interval_h, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO ownwe_characters (id, name, codename, gender, persona_prompt, provider, model, api_key_override, mode_bias, avatar_emoji, sort_order, deep_thinking, checkin_interval_h, group_activity, muted, sleep_start, sleep_end, moment_interval_h, skills, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       codename = excluded.codename,
@@ -102,6 +181,7 @@ function upsertCharacter(dbPath, char) {
       sleep_start = excluded.sleep_start,
       sleep_end = excluded.sleep_end,
       moment_interval_h = excluded.moment_interval_h,
+      skills = excluded.skills,
       updated_at = excluded.updated_at
   `).run(
     id,
@@ -122,6 +202,7 @@ function upsertCharacter(dbPath, char) {
     sleepStart,
     sleepEnd,
     momentIntervalH,
+    skillsJson,
     now,
     now,
   );
@@ -341,8 +422,12 @@ function buildOwnWeContext({ character, memories = [], transcript = "", mode = "
   const timeNote = buildTimeNote(relationshipState);
   const identityNote = buildIdentityNote(character);
 
+  // Skills: expertise/personality amplifiers the character has been given
+  const skillKeys = parseSkills(character.skills);
+  const skillBlock = buildSkillBlock(skillKeys);
+
   // 画像 block — this character's own picture of the user, woven in as intuition
-  const personaWithProfile = [identityNote, character.persona_prompt || "", modeNote, timeNote, profileBlock]
+  const personaWithProfile = [identityNote, character.persona_prompt || "", skillBlock, modeNote, timeNote, profileBlock]
     .filter(Boolean)
     .join("\n\n");
 
@@ -563,6 +648,7 @@ function buildCharCharNote(relationships) {
 }
 
 module.exports = {
+  SKILL_LIBRARY,
   buildOwnWeContext,
   buildIdentityNote,
   readRecentMomentsContext,

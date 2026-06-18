@@ -337,6 +337,10 @@
       <input type="checkbox" id="cMuted" style="width:auto">
       <span style="margin:0">禁言（不再主动找你、不在群里说话、不发朋友圈；单聊仍可回复）</span>
     </label>
+    <div>
+      <span style="font-size:12px;color:var(--ink-2);display:block;margin-bottom:6px">技能（可多选，影响角色回答风格和专业度）</span>
+      <div id="cSkillList" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
     <div class="modal-foot">
       <button type="button" class="btn danger" id="cDelete" style="visibility:hidden">删除</button>
       <div style="display:flex;gap:10px">
@@ -850,7 +854,36 @@ function momToPos(h) {
   }
   return best;
 }
-function openCharDialog(c) {
+// Skills: loaded once from server
+let skillLibrary = [];
+async function ensureSkillLibrary() {
+  if (skillLibrary.length) return;
+  try { skillLibrary = await api("/api/ownwe/skills"); } catch {}
+}
+function renderSkillList(activeKeys = []) {
+  const el = $("cSkillList");
+  el.innerHTML = "";
+  for (const s of skillLibrary) {
+    const active = activeKeys.includes(s.key);
+    const chip = document.createElement("label");
+    chip.style.cssText = "display:flex;align-items:center;gap:4px;cursor:pointer;padding:4px 10px;border-radius:20px;font-size:12px;border:1.5px solid var(--border);background:" + (active ? "var(--accent)" : "transparent") + ";color:" + (active ? "#fff" : "var(--ink-1)");
+    chip.title = s.desc;
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.className = "skill-cb"; cb.value = s.key; cb.checked = active;
+    cb.style.display = "none";
+    cb.addEventListener("change", () => {
+      chip.style.background = cb.checked ? "var(--accent)" : "transparent";
+      chip.style.color = cb.checked ? "#fff" : "var(--ink-1)";
+    });
+    chip.append(cb, document.createTextNode(s.emoji + " " + s.name));
+    el.appendChild(chip);
+  }
+}
+function getSelectedSkills() {
+  return [...$("cSkillList").querySelectorAll(".skill-cb:checked")].map((cb) => cb.value);
+}
+async function openCharDialog(c) {
+  await ensureSkillLibrary();
   $("charDialogTitle").textContent = c ? "编辑角色" : "新建角色";
   $("cId").value = c?.id || ""; $("cEmoji").value = c?.avatar_emoji || ""; $("cName").value = c?.name || "";
   $("cCodename").value = c?.codename || ""; $("cGender").value = c?.gender || "";
@@ -866,6 +899,10 @@ function openCharDialog(c) {
   $("cMuted").checked = c ? !!c.muted : false;
   $("cSleepStart").value = (c && c.sleep_start >= 0) ? c.sleep_start : "";
   $("cSleepEnd").value = (c && c.sleep_end >= 0) ? c.sleep_end : "";
+  // Render skill chips
+  let activeSkills = [];
+  try { activeSkills = JSON.parse(c?.skills || "[]"); } catch {}
+  renderSkillList(activeSkills);
   $("cDelete").style.visibility = c ? "visible" : "hidden";
   $("charDialog").showModal();
 }
@@ -888,6 +925,7 @@ $("charForm").addEventListener("submit", async (e) => {
     muted: $("cMuted").checked ? 1 : 0,
     sleep_start: $("cSleepStart").value === "" ? -1 : Number($("cSleepStart").value),
     sleep_end: $("cSleepEnd").value === "" ? -1 : Number($("cSleepEnd").value),
+    skills: getSelectedSkills(),
   });
   $("charDialog").close(); await loadContacts();
 });
